@@ -2,6 +2,7 @@ let source = null;
 let currentJob = null;
 let startTime = null;
 let elapsedTimer = null;
+let runProvider = "";
 
 /* ---------- terminal ---------- */
 
@@ -83,6 +84,7 @@ function resetRun() {
   setStage("fingerprint", "pending", "Pending");
   setStage("reason", "pending", "Pending");
   setStage("verify", "pending", "Pending");
+  runProvider = "";
   $("run-provider").textContent = "—";
   $("live-dot").className = "dot bg-accent pulse";
   show("run");
@@ -170,6 +172,7 @@ function handle(msg, jobId) {
       hide("tryout");
       setStage("verify", "active", "Verifying");
       $("stage-verify-note").textContent = `Attempt ${msg.attempt} — provisioning via ${msg.provider}.`;
+      runProvider = msg.provider || "";
       $("run-provider").textContent = msg.provider;
       addAttempt(msg.attempt, msg.provider);
       logLine(`> attempt ${msg.attempt} — provisioning via ${msg.provider}`, "text-indigo-300");
@@ -199,7 +202,8 @@ function handle(msg, jobId) {
       appendAttempt(msg.attempt, `
         <div><span class="pill pill-verified"><span class="dot bg-success"></span> Verified in ${msg.elapsed}s</span></div>
         <div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(msg.verification || {}))}</div>`);
-      setStage("verify", "complete", "Verified");
+      setStage("verify", runProvider === "simulated" ? "failed" : "complete",
+               runProvider === "simulated" ? "Simulated" : "Verified");
       break;
     case "kept":
       logLine(`KEPT project ${msg.project_id} in your account — ${msg.url || "no public URL"}`, "text-emerald-400");
@@ -209,7 +213,7 @@ function handle(msg, jobId) {
       hide("tryout");
       logLine(`DONE — verified=${msg.verified}`, msg.verified ? "text-emerald-400" : "text-amber-300");
       if (!msg.verified) setStage("verify", "failed", "Not verified");
-      renderResult(msg.verified, msg.live_url, msg.kept_project_id);
+      renderResult(msg.verified, msg.live_url, msg.kept_project_id, msg.simulated);
       break;
   }
 }
@@ -338,48 +342,57 @@ function renderBootLog(verified) {
   });
 }
 
-function renderResult(verified, liveUrl, keptProjectId) {
+function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
+  // A simulated run passes the pipeline but deploys nothing, so it is shown as
+  // its own outcome rather than as a verification. Green here would be a claim
+  // the run did not earn.
+  const proven = verified && !simulated;
   const banner = $("result-banner");
   banner.className = "card card-raised p-7 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6";
-  banner.style.borderLeft = `3px solid rgb(var(${verified ? "--success" : "--warning"}))`;
+  banner.style.borderLeft = `3px solid rgb(var(${proven ? "--success" : "--warning"}))`;
 
   const attempts = document.querySelectorAll("#attempt-list > div").length || 1;
-  const environment = keptProjectId ? "Your account" : "Ephemeral";
+  const environment = simulated ? "Simulated" : keptProjectId ? "Your account" : "Ephemeral";
   const meta = [
-    ["Status", verified ? "Healthy" : "Not verified"],
+    ["Status", simulated ? "Not deployed" : verified ? "Healthy" : "Not verified"],
     ["Attempts", String(attempts)],
     ["Environment", environment],
-    ["Verification", verified ? "Passed" : "Failed"],
+    ["Verification", proven ? "Passed" : simulated ? "Not run" : "Failed"],
   ];
 
-  const kept = keptProjectId
-    ? `<p class="text-sm text-fg2 mt-2.5">Left running in your account as project <span class="font-mono">${escape(keptProjectId)}</span>.</p>`
-    : verified
-      ? '<p class="text-sm text-fg2 mt-2.5">The throwaway project has been destroyed, as designed.</p>'
-      : "";
+  const kept = simulated
+    ? `<p class="text-sm text-fg2 mt-2.5">No Zerops project was created and nothing was built. Set
+       <span class="font-mono">ZCLI_TOKEN</span> and <span class="font-mono">PATHFINDER_PROVIDER=zcli</span> to deploy for real.</p>`
+    : keptProjectId
+      ? `<p class="text-sm text-fg2 mt-2.5">Left running in your account as project <span class="font-mono">${escape(keptProjectId)}</span>.</p>`
+      : verified
+        ? '<p class="text-sm text-fg2 mt-2.5">The throwaway project has been destroyed, as designed.</p>'
+        : "";
 
   banner.innerHTML = `
     <div class="flex items-start gap-5 min-w-0">
-      <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${verified ? "bg-success/12 text-success" : "bg-warning/14 text-warning"}">
-        <span class="material-symbols-outlined text-[24px]">${verified ? "check_circle" : "error"}</span>
+      <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${proven ? "bg-success/12 text-success" : "bg-warning/14 text-warning"}">
+        <span class="material-symbols-outlined text-[24px]">${proven ? "check_circle" : simulated ? "science" : "error"}</span>
       </div>
       <div class="min-w-0">
-        <h2 class="text-xl font-semibold tracking-tight mb-1.5">${verified ? "Deployment verified" : "Deployment verification failed"}</h2>
-        <p class="text-fg2">${verified
+        <h2 class="text-xl font-semibold tracking-tight mb-1.5">${proven ? "Deployment verified" : simulated ? "Simulated — nothing was deployed" : "Deployment verification failed"}</h2>
+        <p class="text-fg2">${proven
           ? "The generated Zerops configuration deployed and the application booted correctly."
-          : "The configuration did not come up within the attempt limit. The trail above shows each attempt and what it hit."}</p>
+          : simulated
+            ? "This run used the offline provider. The repair loop and the configuration below are real, but no project was created and nothing was built — so this is not a verification."
+            : "The configuration did not come up within the attempt limit. The trail above shows each attempt and what it hit."}</p>
         ${kept}
         <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 mt-5">
           ${meta.map(([k, v]) => `
             <div>
               <dt class="text-[11px] uppercase tracking-wider text-fg3 mb-0.5">${escape(k)}</dt>
-              <dd class="text-sm font-medium ${k === "Status" && verified ? "text-success" : ""}">${escape(v)}</dd>
+              <dd class="text-sm font-medium ${k === "Status" && proven ? "text-success" : ""}">${escape(v)}</dd>
             </div>`).join("")}
         </dl>
       </div>
     </div>
     <div class="flex flex-col gap-2.5 shrink-0">
-      ${verified && liveUrl
+      ${proven && liveUrl
         ? `<a href="${escape(liveUrl)}" target="_blank" rel="noopener" class="btn btn-primary">
              <span class="material-symbols-outlined text-[18px]">open_in_new</span> View deployment
            </a>` : ""}
@@ -389,14 +402,14 @@ function renderResult(verified, liveUrl, keptProjectId) {
     </div>`;
   show("result-banner");
 
-  if (verified) {
+  if (proven) {
     const badge = $("config-badge");
     badge.className = "pill pill-verified";
     badge.textContent = "Verified";
     show("config-badge");
   }
 
-  renderBootLog(verified);
+  renderBootLog(proven);
   renderConfig();
 }
 
@@ -556,7 +569,7 @@ function hydrate(job) {
   } else if (job.status === "done") {
     setStage("verify", job.verified ? "complete" : "failed", job.verified ? "Verified" : "Not verified");
     $("stage-verify-note").textContent = job.stage_detail || "";
-    renderResult(job.verified, job.live_url, job.kept_project_id);
+    renderResult(job.verified, job.live_url, job.kept_project_id, job.provider === "simulated");
   } else if (job.status === "failed") {
     setStage("verify", "failed", "Failed");
     $("stage-verify-note").textContent = job.error || job.stage_detail || "The run failed.";

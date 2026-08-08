@@ -52,6 +52,9 @@ class Job(Base):
     # Verification is opt-in and recorded separately from the generate phase, so
     # a "ready" job stays distinguishable from one that was tried and failed.
     verify_target: Mapped[str] = mapped_column(String(20), default="")
+    # Which transport actually ran. "simulated" provisions nothing, so a pass
+    # from it is NOT a deployment and must never be presented as one.
+    provider: Mapped[str] = mapped_column(String(30), default="")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     live_url: Mapped[str] = mapped_column(String(500), default="")
     # Only set for target="account": that project is deliberately NOT torn down,

@@ -59,6 +59,7 @@ class JobOut(BaseModel):
     created_at: datetime
     finished_at: datetime | None
     verify_target: str = ""
+    provider: str = ""
     verified: bool = False
     live_url: str = ""
     kept_project_id: str = ""

@@ -147,8 +147,12 @@ def process_verify(job_id: str, target: str) -> None:
 
         manifest = result.manifest
         job.manifest = manifest
+        job.provider = provider.name
         job.verified = result.verified
-        job.live_url = result.live_url
+        # The simulator invents a plausible URL. Publishing it would hand the
+        # user a link to a host that does not exist, so a run that provisioned
+        # nothing gets no address to click.
+        job.live_url = "" if _is_simulated(provider) else result.live_url
         if target == "account":
             job.kept_project_id = result.project_id
         _persist_attempts(db, job, result.attempts)
@@ -162,13 +166,16 @@ def process_verify(job_id: str, target: str) -> None:
                 "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
             })
 
-        _write_report(db, job, manifest, result.verified, result.attempts)
+        simulated = _is_simulated(provider)
+        _write_report(db, job, manifest, result.verified, result.attempts, simulated)
         job.finished_at = datetime.now(timezone.utc)
-        _set_status(db, job, "done", _headline(result.verified, result.attempts)[0])
+        _set_status(db, job, "done", _headline(result.verified, result.attempts, simulated)[0])
         bus.publish(job.id, "complete", {
             "verified": result.verified,
-            "live_url": result.live_url,
+            "live_url": job.live_url,
             "kept_project_id": job.kept_project_id,
+            "provider": provider.name,
+            "simulated": simulated,
         })
 
     except (RepoRejected, Exception) as exc:  # noqa: BLE001
@@ -189,7 +196,20 @@ def _target_phrase(target: str) -> str:
     return "your Zerops account" if target == "account" else "a throwaway project"
 
 
-def _headline(verified: bool, attempts) -> tuple[str, str]:
+def _is_simulated(provider) -> bool:
+    return getattr(provider, "name", "") == "simulated"
+
+
+def _headline(verified: bool, attempts, simulated: bool = False) -> tuple[str, str]:
+    if verified and simulated:
+        # The word "verified" is the product's entire claim. A run that
+        # provisioned nothing has not earned it, whatever the pipeline returned.
+        return (
+            "Simulated — nothing was deployed.",
+            "This run used the offline provider, so no Zerops project was created and "
+            "nothing was built. The configuration below is generated, not proven. Set "
+            "ZCLI_TOKEN and PATHFINDER_PROVIDER=zcli to deploy for real.",
+        )
     if verified:
         return (
             "Verified — this configuration was deployed and came up.",
@@ -207,10 +227,11 @@ def _headline(verified: bool, attempts) -> tuple[str, str]:
     )
 
 
-def _write_report(db, job: Job, manifest: dict, verified: bool = False, attempts=()) -> None:
+def _write_report(db, job: Job, manifest: dict, verified: bool = False, attempts=(),
+                  simulated: bool = False) -> None:
     runs = db.query(Run).filter_by(job_id=job.id).order_by(Run.attempt_no).all()
     report = render_report(job, job.fingerprint, manifest, runs,
-                           _headline(verified, attempts))
+                           _headline(verified, attempts, simulated))
     _save(db, job, "deployment_md", "DEPLOYMENT.md", report)
 
 

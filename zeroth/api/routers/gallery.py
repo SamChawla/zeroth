@@ -30,7 +30,13 @@ def gallery(db: Session = Depends(get_session)):
             "attempts": len(j.runs),
             "repaired": any(r.status == "failed" for r in j.runs)
             and any(r.status == "passed" for r in j.runs),
-            "verified": any(r.status == "passed" for r in j.runs),
+            # A simulated run provisions nothing, so it cannot be "verified"
+            # here either - the showcase is the product's evidence, and padding
+            # it with runs that never deployed would be the lie it exists to
+            # disprove.
+            "verified": any(r.status == "passed" for r in j.runs) and j.provider != "simulated",
+            "simulated": j.provider == "simulated",
+            "provider": j.provider,
             "services": [s.get("hostname") for s in (j.manifest or {}).get("services", [])],
             "framework": (j.fingerprint or {}).get("framework") or (j.fingerprint or {}).get("language"),
             "created_at": j.created_at.isoformat(),

@@ -1,9 +1,13 @@
+import logging
+
 from zeroth.config import settings
 from zeroth.worker.providers.base import DeployResult, ZeropsProvider
 from zeroth.worker.providers.simulated import SimulatedProvider
 from zeroth.worker.providers.zcli import ZcliProvider
 
 __all__ = ["DeployResult", "ZeropsProvider", "get_provider"]
+
+log = logging.getLogger("zeroth.providers")
 
 
 def get_provider(token: str | None = None) -> ZeropsProvider:
@@ -15,6 +19,14 @@ def get_provider(token: str | None = None) -> ZeropsProvider:
     """
     if token:
         return ZcliProvider(token=token)
-    if settings.pathfinder_provider == "zcli" and settings.zcli_token:
-        return ZcliProvider()
+    if settings.pathfinder_provider == "zcli":
+        if settings.zcli_token:
+            return ZcliProvider()
+        # Asking for real deployments and silently getting simulated ones is how
+        # an operator ends up believing a run deployed something. The job record
+        # names the provider either way, but this should not be quiet.
+        log.warning(
+            "PATHFINDER_PROVIDER=zcli but ZCLI_TOKEN is empty — falling back to the "
+            "simulated provider. Nothing will be deployed."
+        )
     return SimulatedProvider()

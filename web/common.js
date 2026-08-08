@@ -95,7 +95,9 @@ async function loadGallery(targetId = "gallery", emptyId = "gallery-empty") {
 function galleryRow(j) {
   const status = j.verified
     ? '<span class="pill pill-verified"><span class="dot bg-success"></span> Verified</span>'
-    : '<span class="pill pill-idle">Unverified</span>';
+    : j.simulated
+      ? '<span class="pill pill-warning">Simulated</span>'
+      : '<span class="pill pill-idle">Unverified</span>';
   const services = (j.services || []).slice(0, 3).map((s) =>
     `<span class="pill pill-idle">${escape(s)}</span>`).join(" ");
 

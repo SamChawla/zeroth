@@ -55,6 +55,14 @@ zerops:
     build:
       base: python@3.12
       os: alpine
+      # The browser cannot reach the API by relative path: web is a static file
+      # server on its own origin. The base URL is baked in here rather than
+      # hardcoded in the pages, so the checked-in config.js keeps its localhost
+      # default for local development. api's CORS already allows this origin.
+      envVariables:
+        ZEROTH_API_URL: ${api_zeropsSubdomain}
+      buildCommands:
+        - printf 'window.ZEROTH_API = "%s";\n' "$ZEROTH_API_URL" > web/config.js
       deployFiles: ./
     run:
       base: python@3.12

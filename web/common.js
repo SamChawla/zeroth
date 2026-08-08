@@ -1,12 +1,60 @@
 const API = window.ZEROTH_API || "";
 
 const $ = (id) => document.getElementById(id);
-const show = (id) => $(id).classList.remove("hidden");
-const hide = (id) => $(id).classList.add("hidden");
+const show = (id) => $(id) && $(id).classList.remove("hidden");
+const hide = (id) => $(id) && $(id).classList.add("hidden");
 
 function escape(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ---------- theme ----------
+   Three settings, two themes: "system" is stored as a preference but always
+   resolved to a concrete data-theme before paint, so no page ever renders in
+   an in-between state. The pre-paint resolution lives inline in each document
+   head; this block owns the toggle and keeps it in sync with the OS. */
+
+const THEME_KEY = "zeroth-theme";
+const THEMES = ["light", "dark", "system"];
+
+function storedTheme() {
+  const value = localStorage.getItem(THEME_KEY);
+  return THEMES.includes(value) ? value : "system";
+}
+
+function systemTheme() {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(preference) {
+  const resolved = preference === "system" ? systemTheme() : preference;
+  document.documentElement.setAttribute("data-theme", resolved);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", resolved === "dark" ? "#09090B" : "#F8FAFC");
+  document.querySelectorAll("[data-theme-option]").forEach((btn) => {
+    const active = btn.dataset.themeOption === preference;
+    btn.classList.toggle("bg-surface", active);
+    btn.classList.toggle("text-fg", active);
+    btn.classList.toggle("text-fg3", !active);
+    btn.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function setTheme(preference) {
+  localStorage.setItem(THEME_KEY, preference);
+  applyTheme(preference);
+}
+
+function initTheme() {
+  applyTheme(storedTheme());
+  document.querySelectorAll("[data-theme-option]").forEach((btn) => {
+    btn.addEventListener("click", () => setTheme(btn.dataset.themeOption));
+  });
+  // Follow the OS only while the user is actually on "system".
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (storedTheme() === "system") applyTheme("system");
+  });
 }
 
 /* ---------- starting a run (shared by the home hero and the run page) ---------- */
@@ -31,34 +79,39 @@ async function loadGallery(targetId = "gallery", emptyId = "gallery-empty") {
     if ($("gallery-summary")) {
       const verified = jobs.filter((j) => j.verified).length;
       $("gallery-summary").textContent = jobs.length
-        ? `${jobs.length} run(s) · ${verified} verified`
+        ? `${jobs.length} run${jobs.length === 1 ? "" : "s"} · ${verified} verified`
         : "";
     }
     if (!jobs.length) return jobs;
-    if ($(emptyId)) hide(emptyId);
-    $(targetId).innerHTML = jobs.map(galleryCard).join("");
+    hide(emptyId);
+    show("gallery-table");
+    if ($(targetId)) $(targetId).innerHTML = jobs.map(galleryRow).join("");
     return jobs;
   } catch {
-    /* gallery is decoration on most pages; never block the page on it */
+    /* the gallery is decoration on every page; never block rendering on it */
   }
 }
 
-function galleryCard(j) {
+function galleryRow(j) {
+  const status = j.verified
+    ? '<span class="pill pill-verified"><span class="dot bg-success"></span> Verified</span>'
+    : '<span class="pill pill-idle">Unverified</span>';
+  const services = (j.services || []).slice(0, 3).map((s) =>
+    `<span class="pill pill-idle">${escape(s)}</span>`).join(" ");
+
   return `
-    <a href="run.html?job=${encodeURIComponent(j.id)}"
-       class="glass-panel rounded-lg p-4 hover:bg-white/5 transition-colors cursor-pointer border border-white/5 block">
-      <div class="flex justify-between items-start gap-2 mb-2">
-        <span class="font-code-md text-code-md text-secondary truncate">${escape(j.repo_name)}</span>
-        ${j.verified
-          ? `<span class="shrink-0 flex items-center gap-1 font-label-caps text-label-caps text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Verified</span>`
-          : `<span class="shrink-0 font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded">Unverified</span>`}
-      </div>
-      <div class="font-body-sm text-body-sm text-on-surface-variant mb-4">${j.attempts} attempt(s)${j.repaired ? " · self-repaired" : ""}</div>
-      <div class="flex gap-2 flex-wrap">
-        <span class="font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded">${escape(j.framework || "unknown")}</span>
-        ${(j.services || []).map((s) => `<span class="font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded">${escape(s)}</span>`).join("")}
-      </div>
-    </a>`;
+    <tr class="border-t border-edge hover:bg-surface2/60 transition-colors">
+      <td class="py-3 pr-4">
+        <a class="font-mono text-sm text-fg hover:text-accent transition-colors" href="run.html?job=${encodeURIComponent(j.id)}">${escape(j.repo_name)}</a>
+      </td>
+      <td class="py-3 pr-4">${status}</td>
+      <td class="py-3 pr-4 text-sm text-fg2 hidden sm:table-cell">${escape(j.framework || "unknown")}</td>
+      <td class="py-3 pr-4 hidden lg:table-cell">${services}</td>
+      <td class="py-3 pr-4 text-sm text-fg2 hidden md:table-cell">${j.attempts} attempt${j.attempts === 1 ? "" : "s"}${j.repaired ? " · repaired" : ""}</td>
+      <td class="py-3 text-right">
+        <a class="text-sm text-accent hover:underline" href="run.html?job=${encodeURIComponent(j.id)}">View</a>
+      </td>
+    </tr>`;
 }
 
 /* ---------- a small, honest status light: is the API actually up? ---------- */
@@ -66,17 +119,19 @@ function galleryCard(j) {
 async function checkApiHealth() {
   const el = $("api-status");
   if (!el) return;
-  const dot = el.querySelector("span");
+  const dot = el.querySelector(".dot");
+  const label = el.querySelector("[data-label]");
   try {
     const res = await fetch(`${API}/healthz`);
     if (res.ok) {
-      dot.className = "w-2 h-2 rounded-full bg-emerald-500 inline-block pulse-dot";
-      el.lastChild.textContent = " API online";
+      if (dot) dot.className = "dot bg-success pulse";
+      if (label) label.textContent = "API online";
       return;
     }
-  } catch { /* fall through to offline state */ }
-  dot.className = "w-2 h-2 rounded-full bg-error inline-block";
-  el.lastChild.textContent = " API unreachable";
+  } catch { /* fall through to the offline state */ }
+  if (dot) dot.className = "dot bg-danger";
+  if (label) label.textContent = "API unreachable";
 }
 
+initTheme();
 checkApiHealth();

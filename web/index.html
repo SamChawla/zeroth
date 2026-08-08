@@ -1,104 +1,251 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Zeroth — from repository to verified deployment</title>
-<meta name="description" content="Paste a public repository. Zeroth reads it, writes Zerops configuration, deploys it to a throwaway project, and only hands back config it has watched boot."/>
-<meta name="theme-color" content="#051424"/>
+<meta name="description" content="Analyze a public GitHub or GitLab repository, generate Zerops configuration, deploy it in an isolated environment, and verify that it actually boots."/>
+<meta name="theme-color" content="#F8FAFC"/>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
 <link rel="apple-touch-icon" href="favicon.svg"/>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Resolve the theme before first paint so the page never flashes the wrong one. -->
+<script>
+  (function () {
+    var pref = localStorage.getItem("zeroth-theme") || "system";
+    var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  })();
+</script>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script src="tailwind-config.js"></script>
 <link rel="stylesheet" href="style.css"/>
 </head>
-<body class="bg-background text-on-background antialiased min-h-screen flex flex-col tech-grid-bg">
+<body class="font-sans antialiased min-h-screen flex flex-col">
 
-<nav class="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16 bg-surface/80 backdrop-blur-xl border-b border-white/10 shadow-sm">
-  <a href="index.html" class="flex items-center gap-3">
-    <img src="favicon.svg" alt="Zeroth" class="h-8 w-8 object-contain"/>
-    <span class="font-headline-md text-headline-md font-bold text-primary tracking-tighter">Zeroth</span>
-  </a>
-  <div class="hidden md:flex gap-8">
-    <a class="font-body-md text-body-md text-primary" href="index.html">Showcase</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="run.html">New run</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="about.html">How it works</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">GitHub</a>
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-[60] btn btn-primary">Skip to content</a>
+
+<nav class="nav fixed top-0 w-full z-50">
+  <div class="max-w-content mx-auto px-5 md:px-8 h-14 flex items-center justify-between gap-4">
+    <a href="index.html" class="flex items-center gap-2.5 shrink-0">
+      <img src="favicon.svg" alt="" class="h-7 w-7"/>
+      <span class="font-semibold tracking-tight">Zeroth</span>
+      <span class="hidden sm:inline text-xs text-fg3 border-l border-edge pl-2.5">Verified deployments</span>
+    </a>
+
+    <div class="hidden md:flex items-center gap-7 text-sm">
+      <a class="text-fg2 hover:text-fg transition-colors" href="about.html">How it works</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="#verifications">Recent verifications</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <div class="hidden sm:flex items-center gap-0.5 p-0.5 rounded-btn bg-surface2 border border-edge" role="group" aria-label="Theme">
+        <button data-theme-option="light" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="Light" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">light_mode</span></button>
+        <button data-theme-option="dark" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="Dark" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">dark_mode</span></button>
+        <button data-theme-option="system" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="System" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">computer</span></button>
+      </div>
+      <a href="run.html" class="btn btn-primary">Run it yourself</a>
+    </div>
   </div>
-  <a href="run.html" class="bg-primary/10 text-primary hover:bg-primary/20 px-4 py-2 rounded font-body-sm text-body-sm transition-all border border-primary/20">Run it yourself</a>
 </nav>
 
-<main class="flex-grow pt-32 pb-16 px-margin-mobile md:px-margin-desktop max-w-[1200px] mx-auto w-full flex flex-col items-center">
+<main id="main" class="flex-grow pt-14">
 
-  <div class="text-center w-full max-w-3xl mb-16">
-    <h1 class="font-headline-xl text-headline-xl text-white mb-6">From repository to <span class="text-primary">verified deployment.</span></h1>
-    <p class="font-body-lg text-body-lg text-on-surface-variant mb-12">Zeroth reads a repo, writes the Zerops configuration, deploys it to a throwaway project, and only hands back config it has watched boot.</p>
+  <!-- Hero. The repository input is the product, so it gets the visual weight. -->
+  <section class="max-w-content mx-auto px-5 md:px-8 pt-16 md:pt-24 pb-14">
+    <div class="max-w-3xl mx-auto text-center">
+      <p class="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent mb-5">Verified deployments for Zerops</p>
+      <h1 class="text-4xl md:text-[3.25rem] md:leading-[1.08] font-semibold tracking-tight mb-5">
+        From repository to <span class="text-accent">verified deployment.</span>
+      </h1>
+      <p class="text-lg text-fg2 max-w-2xl mx-auto mb-9">
+        Analyze a public GitHub or GitLab repository, generate Zerops configuration, deploy it
+        in an isolated environment, and verify that it actually boots.
+      </p>
 
-    <form id="hero-form" class="glass-panel rounded-xl p-2 flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto items-center focus-within:border-primary/50 focus-within:glow-active transition-all">
-      <span class="material-symbols-outlined text-outline ml-4 hidden sm:block">link</span>
-      <input id="hero-url" type="url" class="bg-transparent border-none focus:ring-0 w-full font-code-md text-code-md text-white placeholder:text-outline-variant py-3 px-4" placeholder="https://github.com/owner/repo" autocomplete="off" spellcheck="false"/>
-      <button type="submit" class="bg-primary text-on-primary font-label-caps text-label-caps px-6 py-3 rounded-lg hover:bg-primary-container transition-colors w-full sm:w-auto uppercase whitespace-nowrap flex items-center justify-center gap-2">
-        <span class="material-symbols-outlined text-[18px]">rocket_launch</span> Analyze
-      </button>
-    </form>
-    <p class="font-code-sm text-code-sm text-outline-variant mt-4">Public GitHub or GitLab, up to 50&nbsp;MB. Nothing from the repository runs on Zeroth — it is only ever built inside an isolated, temporary Zerops project.</p>
-    <p class="font-body-sm text-body-sm text-error mt-2 hidden" id="hero-err"></p>
-  </div>
+      <form id="hero-form" class="field flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 max-w-2xl mx-auto text-left">
+        <span class="material-symbols-outlined text-fg3 ml-2.5 hidden sm:block text-[20px]">link</span>
+        <label for="hero-url" class="sr-only">Repository URL</label>
+        <input id="hero-url" type="url" required
+               class="bg-transparent border-none focus:ring-0 w-full font-mono text-sm py-2.5 px-3 text-fg"
+               placeholder="https://github.com/owner/repository" autocomplete="off" spellcheck="false"/>
+        <button type="submit" class="btn btn-primary sm:w-auto w-full">
+          Analyze <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        </button>
+      </form>
+      <p class="text-sm text-danger mt-3 hidden" id="hero-err" role="alert"></p>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-24">
-    <div class="glass-panel rounded-xl p-8 flex flex-col relative overflow-hidden group">
-      <div class="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-primary/20 transition-all"></div>
-      <div class="mb-6 h-12 w-12 rounded-lg bg-surface-container flex items-center justify-center border border-white/5 text-primary">
-        <span class="material-symbols-outlined">memory</span>
+      <ul class="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-sm text-fg2">
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Public GitHub / GitLab</li>
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Up to 50&nbsp;MB</li>
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Isolated deployment</li>
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Nothing executes during analysis</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Workflow. Steps 1-3 always run; 4-5 only when the user asks for them. -->
+  <section class="max-w-content mx-auto px-5 md:px-8 pb-20">
+    <div class="card p-6 md:p-8">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-5 md:gap-3">
+        <div class="step is-done flex md:flex-col gap-4 md:gap-3 items-start">
+          <div class="step-icon"><span class="material-symbols-outlined text-[20px]">folder_code</span></div>
+          <div>
+            <div class="step-num mb-1">01 · REPOSITORY</div>
+            <div class="font-medium text-sm mb-1">Point at a repo</div>
+            <p class="text-sm text-fg2">A public GitHub or GitLab URL. Nothing is cloned until it passes admission checks.</p>
+          </div>
+        </div>
+        <div class="step is-done flex md:flex-col gap-4 md:gap-3 items-start">
+          <div class="step-icon"><span class="material-symbols-outlined text-[20px]">manage_search</span></div>
+          <div>
+            <div class="step-num mb-1">02 · ANALYZE</div>
+            <div class="font-medium text-sm mb-1">Extract facts</div>
+            <p class="text-sm text-fg2">A rules engine reads manifests and config files. Your source code never reaches the model.</p>
+          </div>
+        </div>
+        <div class="step is-done flex md:flex-col gap-4 md:gap-3 items-start">
+          <div class="step-icon"><span class="material-symbols-outlined text-[20px]">description</span></div>
+          <div>
+            <div class="step-num mb-1">03 · GENERATE</div>
+            <div class="font-medium text-sm mb-1">Write the config</div>
+            <p class="text-sm text-fg2">Templates render the YAML and parse it back. You get the files here — nothing provisioned.</p>
+          </div>
+        </div>
+        <div class="step flex md:flex-col gap-4 md:gap-3 items-start">
+          <div class="step-icon"><span class="material-symbols-outlined text-[20px]">rocket_launch</span></div>
+          <div>
+            <div class="step-num mb-1">04 · DEPLOY</div>
+            <div class="font-medium text-sm mb-1">Only if you ask</div>
+            <p class="text-sm text-fg2">Deploy to a throwaway project, or into your own Zerops account.</p>
+          </div>
+        </div>
+        <div class="step flex md:flex-col gap-4 md:gap-3 items-start">
+          <div class="step-icon"><span class="material-symbols-outlined text-[20px]">verified</span></div>
+          <div>
+            <div class="step-num mb-1">05 · VERIFY</div>
+            <div class="font-medium text-sm mb-1">Watch it boot</div>
+            <p class="text-sm text-fg2">Read the logs, health-check it, repair and retry on failure.</p>
+          </div>
+        </div>
       </div>
-      <h3 class="font-headline-md text-headline-md text-white mb-3">Deterministic analyzer</h3>
-      <p class="font-body-md text-body-md text-on-surface-variant">No source code leaves the worker. A rules engine extracts facts with evidence from manifests and config files — the model reasons over facts only, never your code.</p>
-      <div class="mt-6 font-code-sm text-code-sm text-outline-variant p-4 bg-[#050810] rounded-lg border border-white/5">
-        <div class="flex items-center gap-2 mb-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Sandboxed clone</span></div>
-        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Every fact cites a filename</span></div>
+      <p class="text-sm text-fg2 mt-7 pt-5 border-t border-edge">
+        <span class="font-medium text-fg">Steps 1&ndash;3 always run</span> and provision nothing, so the configuration
+        arrives in seconds. <span class="font-medium text-fg">Steps 4&ndash;5 are opt-in</span> — deploying costs time
+        and credits, so it happens only when you press the button.
+      </p>
+    </div>
+  </section>
+
+  <!-- The two claims that distinguish this from a config generator. -->
+  <section class="max-w-content mx-auto px-5 md:px-8 pb-20">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+      <article class="card p-7 md:p-8 flex flex-col">
+        <div class="step-num mb-4">01</div>
+        <h2 class="text-xl font-semibold tracking-tight mb-3">Deterministic analyzer</h2>
+        <p class="text-fg2 mb-6">
+          No source code leaves the worker. A rules engine extracts facts with evidence from manifests
+          and configuration files — the model reasons over facts, not your source code.
+        </p>
+        <div class="code-surface rounded-card p-5 font-mono text-[13px] leading-relaxed mb-5 overflow-x-auto scroll-thin">
+          <div class="text-zinc-500">repository</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div>rules engine</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div>facts + evidence</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div class="text-indigo-300">reasoning</div>
+        </div>
+        <p class="mt-auto text-sm font-medium flex items-center gap-2">
+          <span class="material-symbols-outlined text-[17px] text-success">check_circle</span>
+          Every fact cites a filename
+        </p>
+      </article>
+
+      <article class="card p-7 md:p-8 flex flex-col">
+        <div class="step-num mb-4">02</div>
+        <h2 class="text-xl font-semibold tracking-tight mb-3">Proved deployment</h2>
+        <p class="text-fg2 mb-6">
+          Generated configuration isn't enough. On request, Zeroth deploys it to a real Zerops project
+          and watches it boot before calling anything verified.
+        </p>
+        <div class="code-surface rounded-card p-5 font-mono text-[13px] leading-relaxed mb-5 overflow-x-auto scroll-thin">
+          <div>generate</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div>deploy</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div>boot</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div>health check</div>
+          <div class="text-zinc-600">&nbsp;&nbsp;↓</div>
+          <div class="text-emerald-400">✓ verified</div>
+        </div>
+        <p class="mt-auto text-sm font-medium flex items-center gap-2">
+          <span class="material-symbols-outlined text-[17px] text-success">check_circle</span>
+          A failed deployment is reported as failed
+        </p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- Recent verifications -->
+  <section id="verifications" class="max-w-content mx-auto px-5 md:px-8 pb-24">
+    <div class="flex items-end justify-between gap-4 mb-5">
+      <div>
+        <h2 class="text-xl font-semibold tracking-tight">Recent verifications</h2>
+        <p class="text-sm text-fg2 mt-1">Public runs, with whatever result they actually got.</p>
       </div>
+      <span class="font-mono text-xs text-fg3" id="gallery-summary"></span>
     </div>
 
-    <div class="glass-panel rounded-xl p-8 flex flex-col relative overflow-hidden group">
-      <div class="absolute top-0 right-0 w-32 h-32 bg-tertiary/10 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-tertiary/20 transition-all"></div>
-      <div class="mb-6 h-12 w-12 rounded-lg bg-surface-container flex items-center justify-center border border-white/5 text-tertiary-fixed">
-        <span class="material-symbols-outlined">verified</span>
+    <div class="card overflow-hidden">
+      <div id="gallery-empty" class="p-10 text-center">
+        <div class="step-icon mx-auto mb-4"><span class="material-symbols-outlined text-[20px]">inbox</span></div>
+        <p class="font-medium mb-1">No verified deployments yet</p>
+        <p class="text-sm text-fg2 mb-5">Run your first repository analysis to see it appear here.</p>
+        <a href="run.html" class="btn btn-primary inline-flex">Analyze a repository</a>
       </div>
-      <h3 class="font-headline-md text-headline-md text-white mb-3">Proved deployment</h3>
-      <p class="font-body-md text-body-md text-on-surface-variant">We don't just generate config; we watch it boot in a throwaway Zerops project. Config is only handed back once it has actually deployed.</p>
-      <div class="mt-6 font-code-sm text-code-sm text-outline-variant p-4 bg-[#050810] rounded-lg border border-white/5">
-        <div class="flex items-center gap-2 mb-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Deployed to an ephemeral project</span></div>
-        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Repaired up to 3 attempts, honestly</span></div>
+
+      <div id="gallery-table" class="hidden overflow-x-auto scroll-thin">
+        <table class="w-full text-left min-w-[560px]">
+          <thead>
+            <tr class="text-[11px] uppercase tracking-wider text-fg3">
+              <th class="font-medium py-3 px-5 pl-5">Repository</th>
+              <th class="font-medium py-3 pr-4">Status</th>
+              <th class="font-medium py-3 pr-4 hidden sm:table-cell">Framework</th>
+              <th class="font-medium py-3 pr-4 hidden lg:table-cell">Services</th>
+              <th class="font-medium py-3 pr-4 hidden md:table-cell">Attempts</th>
+              <th class="font-medium py-3 pr-5 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="gallery" class="[&>tr>td:first-child]:pl-5 [&>tr>td:last-child]:pr-5"></tbody>
+        </table>
       </div>
     </div>
-  </div>
-
-  <div class="w-full">
-    <h2 class="font-headline-md text-headline-md text-white mb-6 border-b border-white/10 pb-4 flex items-center justify-between gap-2">
-      <span class="flex items-center gap-2"><span class="material-symbols-outlined text-outline">history</span> Recent public verifications</span>
-      <span class="font-code-sm text-code-sm text-on-surface-variant" id="gallery-summary"></span>
-    </h2>
-    <p class="font-body-sm text-body-sm text-on-surface-variant mb-4" id="gallery-empty">Nothing here yet. <a class="text-primary" href="run.html">Start a run</a> to see it appear here.</p>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="gallery"></div>
-  </div>
+  </section>
 
 </main>
 
-<footer class="w-full py-8 px-margin-mobile md:px-margin-desktop flex flex-col md:flex-row justify-between items-center gap-4 bg-surface-container-lowest border-t border-white/5 mt-auto">
-  <div class="font-label-caps text-label-caps text-on-surface-variant">© 2026 Zeroth by Zerops</div>
-  <div class="flex gap-6 items-center">
-    <a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="about.html">How it works</a>
-    <a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
-    <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2" id="api-status">
-      <span class="w-2 h-2 rounded-full bg-outline inline-block"></span> API status
-    </span>
+<footer class="border-t border-edge mt-auto">
+  <div class="max-w-content mx-auto px-5 md:px-8 py-7 flex flex-col md:flex-row justify-between items-center gap-4">
+    <div class="text-sm text-fg3">© 2026 Zeroth · built on Zerops</div>
+    <div class="flex gap-6 items-center text-sm">
+      <a class="text-fg2 hover:text-fg transition-colors" href="about.html">How it works</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
+      <span class="text-fg2 flex items-center gap-2" id="api-status">
+        <span class="dot bg-fg3"></span><span data-label>API status</span>
+      </span>
+    </div>
   </div>
 </footer>
 
+<script src="config.js"></script>
 <script src="common.js"></script>
 <script src="home.js"></script>
 </body>

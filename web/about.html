@@ -1,136 +1,188 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>How it works — Zeroth</title>
-<meta name="description" content="Zeroth's pipeline, its three failure classes, the Zerops services it deploys, and the safety guards around untrusted repositories."/>
-<meta name="theme-color" content="#051424"/>
+<meta name="description" content="The Zeroth pipeline, its three failure classes, the services it runs on, and the safety guards around them."/>
+<meta name="theme-color" content="#F8FAFC"/>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
-<link rel="apple-touch-icon" href="favicon.svg"/>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+  (function () {
+    var pref = localStorage.getItem("zeroth-theme") || "system";
+    var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  })();
+</script>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script src="tailwind-config.js"></script>
 <link rel="stylesheet" href="style.css"/>
 </head>
-<body class="bg-background text-on-background antialiased min-h-screen flex flex-col tech-grid-bg">
+<body class="font-sans antialiased min-h-screen flex flex-col">
 
-<nav class="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16 bg-surface/80 backdrop-blur-xl border-b border-white/10 shadow-sm">
-  <a href="index.html" class="flex items-center gap-3">
-    <img src="favicon.svg" alt="Zeroth" class="h-8 w-8 object-contain"/>
-    <span class="font-headline-md text-headline-md font-bold text-primary tracking-tighter">Zeroth</span>
-  </a>
-  <div class="hidden md:flex gap-8">
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="index.html">Showcase</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="run.html">New run</a>
-    <a class="font-body-md text-body-md text-primary" href="about.html">How it works</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">GitHub</a>
+<nav class="nav fixed top-0 w-full z-50">
+  <div class="max-w-content mx-auto px-5 md:px-8 h-14 flex items-center justify-between gap-4">
+    <a href="index.html" class="flex items-center gap-2.5 shrink-0">
+      <img src="favicon.svg" alt="" class="h-7 w-7"/>
+      <span class="font-semibold tracking-tight">Zeroth</span>
+      <span class="hidden sm:inline text-xs text-fg3 border-l border-edge pl-2.5">Verified deployments</span>
+    </a>
+    <div class="hidden md:flex items-center gap-7 text-sm">
+      <a class="text-fg transition-colors" href="about.html">How it works</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="index.html#verifications">Recent verifications</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="hidden sm:flex items-center gap-0.5 p-0.5 rounded-btn bg-surface2 border border-edge" role="group" aria-label="Theme">
+        <button data-theme-option="light" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="Light" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">light_mode</span></button>
+        <button data-theme-option="dark" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="Dark" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">dark_mode</span></button>
+        <button data-theme-option="system" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="System" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">computer</span></button>
+      </div>
+      <a href="run.html" class="btn btn-primary">Run it yourself</a>
+    </div>
   </div>
-  <a href="run.html" class="bg-primary/10 text-primary hover:bg-primary/20 px-4 py-2 rounded font-body-sm text-body-sm transition-all border border-primary/20">Run it yourself</a>
 </nav>
 
-<main class="flex-grow pt-32 pb-16 px-margin-mobile md:px-margin-desktop max-w-[1000px] mx-auto w-full flex flex-col gap-6">
+<main class="flex-grow pt-14">
+<div class="max-w-[1000px] mx-auto px-5 md:px-8 py-14 md:py-20 flex flex-col gap-6">
 
-  <div class="mb-6">
-    <p class="font-label-caps text-label-caps text-tertiary-fixed mb-2">Reference</p>
-    <h1 class="font-headline-xl text-headline-xl text-white mb-4">How it works</h1>
-    <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">Config generators are easy and mostly worthless: plausible YAML that does not boot is worse than no YAML. Zeroth's product is the verification loop — config is only returned once it has been deployed to a real ephemeral Zerops project and watched come up.</p>
-  </div>
+  <header class="mb-4">
+    <p class="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent mb-3">Reference</p>
+    <h1 class="text-4xl font-semibold tracking-tight mb-4">How it works</h1>
+    <p class="text-lg text-fg2 max-w-2xl">
+      Config generators are easy and mostly worthless: plausible YAML that does not boot is worse
+      than no YAML. Zeroth's product is the verification loop — and because proving a configuration
+      costs real time and credits, that loop runs when you ask for it, not before.
+    </p>
+  </header>
 
-  <section class="glass-panel rounded-xl p-8">
-    <h2 class="font-headline-md text-headline-md text-white mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-outline">route</span> Pipeline</h2>
-    <ol class="space-y-4">
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">01</span><div><strong class="text-on-surface">Safety</strong> <span class="text-on-surface-variant">— admission control: host allowlist (public GitHub/GitLab only), size preflight, private-address refusal.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">02</span><div><strong class="text-on-surface">Ingest</strong> <span class="text-on-surface-variant">— shallow clone (<code>--depth 1 --single-branch</code>), size re-check.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">03</span><div><strong class="text-on-surface">Fingerprint</strong> <span class="text-on-surface-variant">— deterministic rules engine. Facts and evidence only; no source code leaves this stage.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">04</span><div><strong class="text-on-surface">Analyze</strong> <span class="text-on-surface-variant">— the model reasons over facts alone and emits a manifest as JSON.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">05</span><div><strong class="text-on-surface">Validate</strong> <span class="text-on-surface-variant">— JSON Schema plus semantic checks, local and free. Failure class 1.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">06</span><div><strong class="text-on-surface">Generate</strong> <span class="text-on-surface-variant">— Jinja renders the import YAML and <code>zerops.yaml</code>; the generator parses its own output before returning it.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">07</span><div><strong class="text-on-surface">Pathfinder</strong> <span class="text-on-surface-variant">— an ephemeral Zerops project is created, deployed, polled, and verified. Failure classes 2 and 3. On failure: diagnose → patch → retry, up to three attempts.</span></div></li>
-      <li class="flex gap-4"><span class="font-code-md text-code-md text-primary shrink-0">08</span><div><strong class="text-on-surface">Emit</strong> <span class="text-on-surface-variant">— a downloadable bundle plus <code>DEPLOYMENT.md</code> with the full evidence and repair trail. Teardown always runs.</span></div></li>
+  <section class="card p-7 md:p-8">
+    <h2 class="text-xl font-semibold tracking-tight mb-2 flex items-center gap-2.5">
+      <span class="material-symbols-outlined text-fg3 text-[20px]">route</span> Pipeline
+    </h2>
+    <p class="text-sm text-fg2 mb-6">Steps 01–06 always run and provision nothing. 07 is opt-in.</p>
+    <ol class="flex flex-col gap-4">
+      <li class="flex gap-4"><span class="font-mono text-sm text-accent shrink-0 pt-0.5">01</span><div><strong class="font-medium">Safety</strong> <span class="text-fg2">— admission control: host allowlist (public GitHub/GitLab only), size preflight, private-address refusal.</span></div></li>
+      <li class="flex gap-4"><span class="font-mono text-sm text-accent shrink-0 pt-0.5">02</span><div><strong class="font-medium">Ingest</strong> <span class="text-fg2">— shallow clone (<code class="font-mono text-[13px]">--depth 1 --single-branch</code>), size re-check.</span></div></li>
+      <li class="flex gap-4"><span class="font-mono text-sm text-accent shrink-0 pt-0.5">03</span><div><strong class="font-medium">Fingerprint</strong> <span class="text-fg2">— deterministic rules engine. Facts and evidence only; no source code leaves this stage.</span></div></li>
+      <li class="flex gap-4"><span class="font-mono text-sm text-accent shrink-0 pt-0.5">04</span><div><strong class="font-medium">Analyze</strong> <span class="text-fg2">— the model reasons over facts alone and emits a manifest as JSON.</span></div></li>
+      <li class="flex gap-4"><span class="font-mono text-sm text-accent shrink-0 pt-0.5">05</span><div><strong class="font-medium">Validate</strong> <span class="text-fg2">— JSON Schema plus semantic checks, local and free. Failure class 1.</span></div></li>
+      <li class="flex gap-4"><span class="font-mono text-sm text-accent shrink-0 pt-0.5">06</span><div><strong class="font-medium">Generate</strong> <span class="text-fg2">— Jinja renders the import YAML and <code class="font-mono text-[13px]">zerops.yaml</code>; the generator parses its own output before returning it. The run stops here, at <strong class="text-fg font-medium">ready</strong>.</span></div></li>
+      <li class="flex gap-4"><span class="font-mono text-sm text-success shrink-0 pt-0.5">07</span><div><strong class="font-medium">Pathfinder</strong> <span class="text-fg2">— on request only: a real Zerops project is created, deployed, polled and verified. Failure classes 2 and 3. On failure: diagnose → patch → retry, up to two attempts. Then a bundle plus <code class="font-mono text-[13px]">DEPLOYMENT.md</code> with the full evidence and repair trail.</span></div></li>
     </ol>
   </section>
 
-  <section class="glass-panel rounded-xl p-8">
-    <h2 class="font-headline-md text-headline-md text-white mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-outline">layers</span> Three failure classes</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-left border-collapse">
+  <section class="card p-7 md:p-8">
+    <h2 class="text-xl font-semibold tracking-tight mb-2 flex items-center gap-2.5">
+      <span class="material-symbols-outlined text-fg3 text-[20px]">layers</span> Three failure classes
+    </h2>
+    <p class="text-sm text-fg2 mb-6">Each caught at the cheapest level that can catch it.</p>
+    <div class="overflow-x-auto scroll-thin">
+      <table class="w-full text-left border-collapse min-w-[520px]">
         <thead>
-          <tr class="border-b border-white/10">
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2 pr-4">Class</th>
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2 pr-4">Caught at</th>
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2 pr-4">Cost</th>
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2">Repair</th>
+          <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-fg3">
+            <th class="font-medium py-2.5 pr-4">Class</th>
+            <th class="font-medium py-2.5 pr-4">Caught at</th>
+            <th class="font-medium py-2.5 pr-4">Cost</th>
+            <th class="font-medium py-2.5">Repair</th>
           </tr>
         </thead>
-        <tbody class="font-body-sm text-body-sm text-on-surface-variant">
-          <tr class="border-b border-white/5"><td class="py-3 pr-4 font-code-md text-code-md text-primary">Schema</td><td class="py-3 pr-4">Local validation</td><td class="py-3 pr-4">Milliseconds</td><td class="py-3">Model corrects its own JSON</td></tr>
-          <tr class="border-b border-white/5"><td class="py-3 pr-4 font-code-md text-code-md text-primary">Infrastructure</td><td class="py-3 pr-4">Project import</td><td class="py-3 pr-4">One API call</td><td class="py-3">Model patches the manifest</td></tr>
-          <tr><td class="py-3 pr-4 font-code-md text-code-md text-primary">Runtime</td><td class="py-3 pr-4">Build / verify</td><td class="py-3 pr-4">Full build cycle</td><td class="py-3">Model reads logs, patches the manifest</td></tr>
+        <tbody class="text-sm text-fg2">
+          <tr class="border-b border-edge"><td class="py-3 pr-4 font-mono text-accent">Schema</td><td class="py-3 pr-4">Local validation</td><td class="py-3 pr-4">Milliseconds</td><td class="py-3">Model corrects its own JSON</td></tr>
+          <tr class="border-b border-edge"><td class="py-3 pr-4 font-mono text-accent">Infrastructure</td><td class="py-3 pr-4">Project import</td><td class="py-3 pr-4">One API call</td><td class="py-3">Model patches the manifest</td></tr>
+          <tr><td class="py-3 pr-4 font-mono text-accent">Runtime</td><td class="py-3 pr-4">Build / verify</td><td class="py-3 pr-4">Full build cycle</td><td class="py-3">Model reads logs, patches the manifest</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="font-body-sm text-body-sm text-on-surface-variant mt-4">Catching each at the cheapest level available is what separates a tool from a demo. Schema errors need no provisioning at all — the repair loop is demonstrable even with zero credits.</p>
+    <p class="text-sm text-fg2 mt-5">Catching each at the cheapest level available is what separates a tool from a demo. Schema errors need no provisioning at all — the repair loop is demonstrable even with zero credits.</p>
   </section>
 
-  <section class="glass-panel rounded-xl p-8">
-    <h2 class="font-headline-md text-headline-md text-white mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-outline">dns</span> Zerops services</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-left border-collapse">
+  <section class="card p-7 md:p-8">
+    <h2 class="text-xl font-semibold tracking-tight mb-2 flex items-center gap-2.5">
+      <span class="material-symbols-outlined text-fg3 text-[20px]">rocket_launch</span> Where a verification lands
+    </h2>
+    <p class="text-sm text-fg2 mb-6">You choose the target when you start a verification run.</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="rounded-card border border-edge bg-surface2 p-5">
+        <div class="font-medium mb-1.5">Throwaway project</div>
+        <p class="text-sm text-fg2">Provisioned on Zeroth's own account and destroyed in a <code class="font-mono text-[13px]">finally</code> block on every path. Nothing survives the run.</p>
+      </div>
+      <div class="rounded-card border border-edge bg-surface2 p-5">
+        <div class="font-medium mb-1.5">Your Zerops account</div>
+        <p class="text-sm text-fg2">Provisioned with a token you supply for that one run. A project that came up is kept; failed attempts are still torn down rather than abandoned in your account.</p>
+      </div>
+    </div>
+    <p class="text-sm text-fg2 mt-5">
+      Your token is held only for the run — never written to the database, the logs, or the downloadable
+      bundle — and each run gets an isolated <code class="font-mono text-[13px]">zcli</code> session, so concurrent runs cannot see each
+      other's credentials.
+    </p>
+  </section>
+
+  <section class="card p-7 md:p-8">
+    <h2 class="text-xl font-semibold tracking-tight mb-2 flex items-center gap-2.5">
+      <span class="material-symbols-outlined text-fg3 text-[20px]">dns</span> Zerops services
+    </h2>
+    <p class="text-sm text-fg2 mb-6">What Zeroth itself runs on.</p>
+    <div class="overflow-x-auto scroll-thin">
+      <table class="w-full text-left border-collapse min-w-[520px]">
         <thead>
-          <tr class="border-b border-white/10">
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2 pr-4">Service</th>
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2 pr-4">Type</th>
-            <th class="font-label-caps text-label-caps text-tertiary-fixed py-2">Role</th>
+          <tr class="border-b border-edge text-[11px] uppercase tracking-wider text-fg3">
+            <th class="font-medium py-2.5 pr-4">Service</th>
+            <th class="font-medium py-2.5 pr-4">Type</th>
+            <th class="font-medium py-2.5">Role</th>
           </tr>
         </thead>
-        <tbody class="font-body-sm text-body-sm text-on-surface-variant">
-          <tr class="border-b border-white/5"><td class="py-3 pr-4 font-code-md text-code-md text-primary">web</td><td class="py-3 pr-4">static</td><td class="py-3">UI, live route view, gallery</td></tr>
-          <tr class="border-b border-white/5"><td class="py-3 pr-4 font-code-md text-code-md text-primary">api</td><td class="py-3 pr-4">python@3.12</td><td class="py-3">Job intake, SSE relay, bundle download</td></tr>
-          <tr class="border-b border-white/5"><td class="py-3 pr-4 font-code-md text-code-md text-primary">worker</td><td class="py-3 pr-4">python@3.12</td><td class="py-3">Clone, fingerprint, analyze, deploy, repair</td></tr>
-          <tr class="border-b border-white/5"><td class="py-3 pr-4 font-code-md text-code-md text-primary">db</td><td class="py-3 pr-4">postgresql@16</td><td class="py-3">Jobs, attempts, artifacts</td></tr>
-          <tr><td class="py-3 pr-4 font-code-md text-code-md text-primary">cache</td><td class="py-3 pr-4">valkey@7.2</td><td class="py-3">Job queue, event fan-out, rate limits, concurrency cap</td></tr>
+        <tbody class="text-sm text-fg2">
+          <tr class="border-b border-edge"><td class="py-3 pr-4 font-mono text-accent">web</td><td class="py-3 pr-4">python@3.12</td><td class="py-3">UI, live run view, gallery</td></tr>
+          <tr class="border-b border-edge"><td class="py-3 pr-4 font-mono text-accent">api</td><td class="py-3 pr-4">python@3.12</td><td class="py-3">Job intake, SSE relay, bundle download</td></tr>
+          <tr class="border-b border-edge"><td class="py-3 pr-4 font-mono text-accent">worker</td><td class="py-3 pr-4">python@3.12</td><td class="py-3">Clone, fingerprint, analyze, deploy, repair</td></tr>
+          <tr class="border-b border-edge"><td class="py-3 pr-4 font-mono text-accent">db</td><td class="py-3 pr-4">postgresql@16</td><td class="py-3">Jobs, attempts, artifacts</td></tr>
+          <tr><td class="py-3 pr-4 font-mono text-accent">cache</td><td class="py-3 pr-4">valkey@7.2</td><td class="py-3">Job queue, event fan-out, rate limits, concurrency cap</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="font-body-sm text-body-sm text-on-surface-variant mt-4">Only <code>web</code> and <code>api</code> are public. Everything else talks over the private network.</p>
+    <p class="text-sm text-fg2 mt-5">Only <code class="font-mono text-[13px]">web</code> and <code class="font-mono text-[13px]">api</code> are public. Everything else talks over the private network.</p>
   </section>
 
-  <section class="glass-panel rounded-xl p-8">
-    <h2 class="font-headline-md text-headline-md text-white mb-6 flex items-center gap-2"><span class="material-symbols-outlined text-outline">shield</span> Safety</h2>
-    <ul class="space-y-3 font-body-md text-body-md text-on-surface-variant">
-      <li class="flex gap-3"><span class="material-symbols-outlined text-primary text-[20px]">check</span> Public GitHub/GitLab only, size-capped, private addresses refused.</li>
-      <li class="flex gap-3"><span class="material-symbols-outlined text-primary text-[20px]">check</span> Repository code never executes on the Zeroth worker — only inside the isolated ephemeral project.</li>
-      <li class="flex gap-3"><span class="material-symbols-outlined text-primary text-[20px]">check</span> Teardown runs in a <code>finally</code> block on every path.</li>
-      <li class="flex gap-3"><span class="material-symbols-outlined text-primary text-[20px]">check</span> Global concurrency cap and per-IP rate limit, so a burst of traffic cannot drain credits.</li>
-      <li class="flex gap-3"><span class="material-symbols-outlined text-primary text-[20px]">check</span> No platform secrets are placed in ephemeral project environments.</li>
+  <section class="card p-7 md:p-8">
+    <h2 class="text-xl font-semibold tracking-tight mb-6 flex items-center gap-2.5">
+      <span class="material-symbols-outlined text-fg3 text-[20px]">shield</span> Safety
+    </h2>
+    <ul class="flex flex-col gap-3 text-fg2">
+      <li class="flex gap-3"><span class="material-symbols-outlined text-success text-[19px] shrink-0">check</span> Public GitHub/GitLab only, size-capped, private addresses refused.</li>
+      <li class="flex gap-3"><span class="material-symbols-outlined text-success text-[19px] shrink-0">check</span> Repository code never executes on the Zeroth worker — only inside the deployment target.</li>
+      <li class="flex gap-3"><span class="material-symbols-outlined text-success text-[19px] shrink-0">check</span> Teardown runs in a <code class="font-mono text-[13px]">finally</code> block on every path.</li>
+      <li class="flex gap-3"><span class="material-symbols-outlined text-success text-[19px] shrink-0">check</span> Global concurrency cap and per-IP rate limit, so a burst of traffic cannot drain credits.</li>
+      <li class="flex gap-3"><span class="material-symbols-outlined text-success text-[19px] shrink-0">check</span> No platform secrets are placed in ephemeral project environments.</li>
     </ul>
   </section>
 
-  <div class="flex flex-col sm:flex-row gap-4 justify-center py-6">
-    <a href="run.html" class="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded font-body-sm hover:brightness-110 transition-all">
-      <span class="material-symbols-outlined">rocket_launch</span> Try it on a repository
-    </a>
-    <a href="index.html" class="flex items-center justify-center gap-2 px-6 py-3 border border-outline-variant text-on-surface rounded font-body-sm hover:bg-white/5 transition-all">
-      Browse the showcase
-    </a>
+  <div class="flex flex-col sm:flex-row gap-3 justify-center py-4">
+    <a href="run.html" class="btn btn-primary"><span class="material-symbols-outlined text-[18px]">rocket_launch</span> Try it on a repository</a>
+    <a href="index.html" class="btn btn-secondary">Browse the showcase</a>
   </div>
+</div>
 </main>
 
-<footer class="w-full py-8 px-margin-mobile md:px-margin-desktop flex flex-col md:flex-row justify-between items-center gap-4 bg-surface-container-lowest border-t border-white/5 mt-auto">
-  <div class="font-label-caps text-label-caps text-on-surface-variant">© 2026 Zeroth by Zerops</div>
-  <div class="flex gap-6 items-center">
-    <a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="run.html">Start a run</a>
-    <a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
-    <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2" id="api-status">
-      <span class="w-2 h-2 rounded-full bg-outline inline-block"></span> API status
-    </span>
+<footer class="border-t border-edge mt-auto">
+  <div class="max-w-content mx-auto px-5 md:px-8 py-7 flex flex-col md:flex-row justify-between items-center gap-4">
+    <div class="text-sm text-fg3">© 2026 Zeroth · built on Zerops</div>
+    <div class="flex gap-6 items-center text-sm">
+      <a class="text-fg2 hover:text-fg transition-colors" href="run.html">Start a run</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
+      <span class="text-fg2 flex items-center gap-2" id="api-status">
+        <span class="dot bg-fg3"></span><span data-label>API status</span>
+      </span>
+    </div>
   </div>
 </footer>
 
+<script src="config.js"></script>
 <script src="common.js"></script>
 </body>
 </html>

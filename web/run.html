@@ -1,256 +1,287 @@
 <!DOCTYPE html>
-<html class="dark" lang="en">
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>New run — Zeroth</title>
-<meta name="description" content="Paste a public repository and Zeroth will fingerprint it, design a Zerops architecture, deploy it to a throwaway project, and repair it if it fails."/>
-<meta name="theme-color" content="#051424"/>
+<title>Run — Zeroth</title>
+<meta name="description" content="Analyze a repository, read the generated Zerops configuration, then deploy and verify it."/>
+<meta name="theme-color" content="#F8FAFC"/>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
-<link rel="apple-touch-icon" href="favicon.svg"/>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+  (function () {
+    var pref = localStorage.getItem("zeroth-theme") || "system";
+    var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  })();
+</script>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400..700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script src="tailwind-config.js"></script>
 <link rel="stylesheet" href="style.css"/>
 </head>
-<body class="bg-background text-on-surface min-h-screen flex flex-col font-body-md overflow-x-hidden">
+<body class="font-sans antialiased min-h-screen flex flex-col">
 
-<nav class="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-16 bg-surface/80 backdrop-blur-xl border-b border-white/10 shadow-sm">
-  <a href="index.html" class="flex items-center gap-3">
-    <img src="favicon.svg" alt="Zeroth" class="h-8 w-8 object-contain"/>
-    <span class="font-headline-md text-headline-md font-bold text-primary tracking-tighter">Zeroth</span>
-  </a>
-  <div class="hidden md:flex gap-8">
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="index.html">Showcase</a>
-    <a class="font-body-md text-body-md text-primary" href="run.html">New run</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="about.html">How it works</a>
-    <a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">GitHub</a>
+<nav class="nav fixed top-0 w-full z-50">
+  <div class="max-w-content mx-auto px-5 md:px-8 h-14 flex items-center justify-between gap-4">
+    <a href="index.html" class="flex items-center gap-2.5 shrink-0">
+      <img src="favicon.svg" alt="" class="h-7 w-7"/>
+      <span class="font-semibold tracking-tight">Zeroth</span>
+      <span class="hidden sm:inline text-xs text-fg3 border-l border-edge pl-2.5">Verified deployments</span>
+    </a>
+    <div class="hidden md:flex items-center gap-7 text-sm">
+      <a class="text-fg2 hover:text-fg transition-colors" href="about.html">How it works</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="index.html#verifications">Recent verifications</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="hidden sm:flex items-center gap-0.5 p-0.5 rounded-btn bg-surface2 border border-edge" role="group" aria-label="Theme">
+        <button data-theme-option="light" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="Light" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">light_mode</span></button>
+        <button data-theme-option="dark" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="Dark" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">dark_mode</span></button>
+        <button data-theme-option="system" class="px-2 py-1 rounded-[7px] text-fg3 transition-colors" title="System" aria-pressed="false"><span class="material-symbols-outlined text-[16px] align-middle">computer</span></button>
+      </div>
+      <a href="index.html" class="btn btn-secondary">Showcase</a>
+    </div>
   </div>
-  <a href="index.html" class="bg-primary/10 text-primary hover:bg-primary/20 px-4 py-2 rounded font-body-sm text-body-sm transition-all border border-primary/20">Showcase</a>
 </nav>
 
-<main class="flex-grow pt-24 px-margin-mobile md:px-margin-desktop pb-16 w-full max-w-max-width mx-auto flex flex-col gap-6">
+<main class="flex-grow pt-14">
+<div class="max-w-content mx-auto px-5 md:px-8 py-10 md:py-14 flex flex-col gap-6">
 
-  <div id="console-panel" class="glass-panel rounded-xl p-8">
-    <p class="font-label-caps text-label-caps text-tertiary-fixed mb-2">Pathfinder run</p>
-    <h1 class="font-headline-lg text-headline-lg text-white mb-3">Find the path</h1>
-    <p class="font-body-md text-body-md text-on-surface-variant mb-6 max-w-2xl">Paste a public repository. Zeroth fingerprints it, designs a Zerops architecture, deploys it to a throwaway project, and repairs the configuration if it fails.</p>
-    <form id="run-form" class="glass-panel rounded-xl p-2 flex flex-col sm:flex-row gap-2 max-w-2xl items-center focus-within:border-primary/50 focus-within:glow-active transition-all">
-      <span class="material-symbols-outlined text-outline ml-4 hidden sm:block">link</span>
-      <input id="repo" type="url" class="bg-transparent border-none focus:ring-0 w-full font-code-md text-code-md text-white placeholder:text-outline-variant py-3 px-4" placeholder="https://github.com/owner/repo" autocomplete="off" spellcheck="false"/>
-      <button id="go" type="submit" class="bg-primary text-on-primary font-label-caps text-label-caps px-6 py-3 rounded-lg hover:bg-primary-container transition-colors w-full sm:w-auto uppercase whitespace-nowrap flex items-center justify-center gap-2">
-        <span class="material-symbols-outlined text-[18px]">rocket_launch</span> Find the path
+  <!-- Submit -->
+  <section id="console-panel" class="card p-6 md:p-8">
+    <h1 class="text-2xl font-semibold tracking-tight mb-2">Analyze a repository</h1>
+    <p class="text-fg2 mb-6 max-w-2xl">
+      Zeroth reads the repository and writes the Zerops configuration. Nothing is deployed
+      until you ask for it.
+    </p>
+    <form id="run-form" class="field flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 max-w-2xl">
+      <span class="material-symbols-outlined text-fg3 ml-2.5 hidden sm:block text-[20px]">link</span>
+      <label for="repo" class="sr-only">Repository URL</label>
+      <input id="repo" type="url" required
+             class="bg-transparent border-none focus:ring-0 w-full font-mono text-sm py-2.5 px-3 text-fg"
+             placeholder="https://github.com/owner/repository" autocomplete="off" spellcheck="false"/>
+      <button id="go" type="submit" class="btn btn-primary sm:w-auto w-full">
+        Analyze <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
       </button>
     </form>
-    <p class="font-code-sm text-code-sm text-outline-variant mt-3">Public GitHub or GitLab, up to 50&nbsp;MB. Nothing from the repository runs on Zeroth.</p>
-    <p class="font-body-sm text-body-sm text-error mt-2 hidden" id="err"></p>
-  </div>
+    <p class="text-sm text-fg2 mt-4">Public GitHub or GitLab, up to 50&nbsp;MB. Nothing from the repository executes during analysis.</p>
+    <p class="text-sm text-danger mt-2 hidden" id="err" role="alert"></p>
+  </section>
 
-  <p class="glass-panel rounded-lg p-4 font-body-sm text-body-sm text-on-surface-variant hidden" id="viewing-note">
-    Viewing a completed run. <a class="text-primary" href="run.html">Start a new one</a> or browse the <a class="text-primary" href="index.html">showcase</a>.
+  <p class="card p-4 text-sm text-fg2 hidden" id="viewing-note">
+    You are viewing a completed run. <a class="text-accent hover:underline" href="run.html">Start your own</a>.
   </p>
 
+  <!-- Live run -->
   <div id="run" class="hidden flex flex-col gap-6">
 
-    <!-- Live status bar -->
-    <header class="glass-panel rounded-xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-      <div>
-        <h1 class="font-headline-lg text-headline-lg text-on-surface flex items-center gap-3">
-          <span class="w-3 h-3 rounded-full bg-primary pulse-dot" id="live-dot"></span>
-          <span id="run-title">Live pipeline execution</span>
-        </h1>
-        <div class="mt-2 flex items-center gap-2 font-code-sm text-code-sm text-on-surface-variant">
-          <span class="material-symbols-outlined text-[16px]">source</span>
+    <!-- Run header -->
+    <section class="card p-5 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-5">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2.5 mb-1.5">
+          <span class="dot bg-accent pulse" id="live-dot"></span>
+          <span class="text-[11px] font-semibold tracking-[0.12em] uppercase text-fg3" id="run-title">Zeroth analyzer</span>
+        </div>
+        <a id="repo-link" href="#" target="_blank" rel="noopener"
+           class="font-mono text-base text-fg hover:text-accent transition-colors truncate block" id="repo-name-wrap">
           <span id="repo-name">—</span>
-          <span class="px-2 py-0.5 rounded-DEFAULT bg-primary/10 text-primary uppercase ml-2 border border-primary/20" id="run-provider">—</span>
+        </a>
+      </div>
+      <div class="flex items-center gap-7 shrink-0">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-fg3 mb-1">Elapsed</div>
+          <div class="font-mono text-lg" id="elapsed">00:00</div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-fg3 mb-1">Provider</div>
+          <div class="font-mono text-sm" id="run-provider">—</div>
         </div>
       </div>
-      <div class="flex gap-6">
-        <div class="text-right">
-          <div class="font-label-caps text-label-caps text-on-surface-variant">Elapsed time</div>
-          <div class="font-code-md text-code-md text-on-surface" id="elapsed">00:00</div>
-        </div>
-        <div class="text-right">
-          <div class="font-label-caps text-label-caps text-on-surface-variant">Environment</div>
-          <div class="font-code-md text-code-md text-on-surface">Ephemeral Zerops project</div>
-        </div>
-      </div>
-    </header>
+    </section>
 
-    <!-- Pipeline bento grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div class="lg:col-span-8 flex flex-col gap-6 relative">
-        <div class="absolute left-[39px] top-12 bottom-12 w-[2px] bg-white/5 z-0 hidden sm:block"></div>
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-        <!-- Stage 1: Fingerprint -->
-        <div class="glass-panel rounded-xl p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start" id="stage-fingerprint">
-          <div class="w-12 h-12 rounded-full bg-surface-container-high border border-white/10 flex items-center justify-center shrink-0">
-            <span class="material-symbols-outlined text-primary">fingerprint</span>
-          </div>
-          <div class="flex-grow w-full">
-            <div class="flex justify-between items-center mb-4">
-              <h2 class="font-headline-md text-headline-md text-on-surface">Fingerprinting</h2>
-              <span class="font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded-DEFAULT" id="stage-fingerprint-tag">Pending</span>
+      <!-- Pipeline -->
+      <div class="lg:col-span-3 flex flex-col gap-4">
+
+        <section class="card p-6" id="stage-fingerprint">
+          <div class="flex items-start justify-between gap-4 mb-4">
+            <div class="flex gap-3.5">
+              <div class="step-icon"><span class="material-symbols-outlined text-[20px]">manage_search</span></div>
+              <div>
+                <div class="step-num mb-0.5">01 · ANALYZE</div>
+                <h2 class="font-semibold">Repository fingerprint</h2>
+              </div>
             </div>
-            <div class="grid grid-cols-2 gap-3" id="evidence"></div>
+            <span class="pill pill-idle" id="stage-fingerprint-tag">Pending</span>
           </div>
-        </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="evidence"></div>
+        </section>
 
-        <div class="w-full h-8 flex justify-start pl-[39px] relative z-0 hidden sm:flex"><div class="w-[2px] h-full flow-line"></div></div>
-
-        <!-- Stage 2: AI Reasoning -->
-        <div class="glass-panel rounded-xl p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start opacity-60" id="stage-reason">
-          <div class="w-12 h-12 rounded-full bg-surface-container-high border border-white/10 flex items-center justify-center shrink-0">
-            <span class="material-symbols-outlined text-primary">psychology</span>
-          </div>
-          <div class="flex-grow w-full">
-            <div class="flex justify-between items-center mb-4">
-              <h2 class="font-headline-md text-headline-md text-on-surface">AI model reasoning</h2>
-              <span class="font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded-DEFAULT" id="stage-reason-tag">Pending</span>
+        <section class="card p-6" id="stage-reason">
+          <div class="flex items-start justify-between gap-4 mb-4">
+            <div class="flex gap-3.5">
+              <div class="step-icon"><span class="material-symbols-outlined text-[20px]">description</span></div>
+              <div>
+                <div class="step-num mb-0.5">02 · GENERATE</div>
+                <h2 class="font-semibold">Proposed architecture</h2>
+              </div>
             </div>
-            <div id="services" class="flex flex-col gap-3"></div>
+            <span class="pill pill-idle" id="stage-reason-tag">Pending</span>
           </div>
-        </div>
+          <div id="services" class="flex flex-col gap-2.5"></div>
+        </section>
 
-        <div class="w-full h-8 flex justify-start pl-[39px] relative z-0 hidden sm:flex"><div class="w-[2px] h-full bg-white/10"></div></div>
-
-        <!-- Stage 3: Verification & repair -->
-        <div class="glass-panel rounded-xl p-6 relative z-10 flex flex-col sm:flex-row gap-6 items-start opacity-60" id="stage-verify">
-          <div class="w-12 h-12 rounded-full bg-surface-container-high border border-white/10 flex items-center justify-center shrink-0">
-            <span class="material-symbols-outlined text-outline">build</span>
-          </div>
-          <div class="flex-grow w-full">
-            <div class="flex justify-between items-center mb-2">
-              <h2 class="font-headline-md text-headline-md text-on-surface">Verification &amp; repair</h2>
-              <span class="font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded-DEFAULT" id="stage-verify-tag">Pending</span>
+        <section class="card p-6" id="stage-verify">
+          <div class="flex items-start justify-between gap-4 mb-4">
+            <div class="flex gap-3.5">
+              <div class="step-icon"><span class="material-symbols-outlined text-[20px]">verified</span></div>
+              <div>
+                <div class="step-num mb-0.5">03 · VERIFY</div>
+                <h2 class="font-semibold">Deployment</h2>
+              </div>
             </div>
-            <p class="font-body-sm text-body-sm text-on-surface-variant mb-3" id="stage-verify-note">Awaiting initial deployment to verify service health.</p>
-            <div id="attempt-list" class="flex flex-col gap-3"></div>
+            <span class="pill pill-idle" id="stage-verify-tag">Pending</span>
           </div>
-        </div>
+          <p class="text-sm text-fg2 mb-4" id="stage-verify-note">Nothing has been provisioned.</p>
+          <div id="attempt-list" class="flex flex-col gap-3"></div>
+        </section>
       </div>
 
       <!-- Terminal -->
-      <div class="lg:col-span-4 flex flex-col h-[600px] lg:h-auto">
-        <div class="glass-panel rounded-xl flex flex-col h-full overflow-hidden border border-white/10 bg-[#050810]/80">
-          <div class="flex items-center justify-between p-3 border-b border-white/5 bg-surface-container-lowest">
-            <div class="font-label-caps text-label-caps text-on-surface-variant flex items-center gap-2">
-              <span class="material-symbols-outlined text-[14px]">terminal</span> Zerops ephemeral log
+      <div class="lg:col-span-2">
+        <section class="card overflow-hidden flex flex-col h-[520px] lg:sticky lg:top-20">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-edge">
+            <div class="flex items-center gap-2 text-sm text-fg2">
+              <span class="material-symbols-outlined text-[16px]">terminal</span> Event log
             </div>
-            <div class="flex gap-1.5">
-              <div class="w-2.5 h-2.5 rounded-full bg-error/80"></div>
-              <div class="w-2.5 h-2.5 rounded-full bg-tertiary/80"></div>
-              <div class="w-2.5 h-2.5 rounded-full bg-primary/80"></div>
-            </div>
+            <span class="pill pill-idle">live</span>
           </div>
-          <div class="p-4 overflow-y-auto flex-grow font-code-sm text-code-sm text-on-surface-variant scrollbar-hide flex flex-col gap-1" id="terminal"></div>
-        </div>
+          <div class="code-surface flex-grow overflow-y-auto scroll-thin p-4 font-mono text-[12.5px] leading-relaxed flex flex-col gap-1 border-0" id="terminal"></div>
+        </section>
       </div>
     </div>
 
-    <!-- Result banner (shown once the job reaches a terminal state) -->
-    <div id="result-banner" class="hidden glass-panel rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-l-4"></div>
+    <!-- Result banner -->
+    <div id="result-banner" class="hidden card p-7 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6"></div>
 
-    <!-- Try it out. Verification is opt-in: nothing is provisioned until this is used. -->
-    <div id="tryout" class="hidden glass-panel rounded-xl p-8 flex flex-col gap-6 border-l-4 border-l-tertiary">
+    <!-- Try it out. Deployment is opt-in; this is the only thing that starts it. -->
+    <section id="tryout" class="hidden card card-raised p-7 md:p-8 flex flex-col gap-6">
       <div class="flex items-start gap-4">
-        <span class="material-symbols-outlined text-3xl text-tertiary shrink-0">rocket_launch</span>
+        <div class="step-icon"><span class="material-symbols-outlined text-[20px]">rocket_launch</span></div>
         <div>
-          <h2 class="font-headline-md text-headline-md text-on-surface mb-1">Configuration ready</h2>
-          <p class="font-body-lg text-body-lg text-on-surface-variant">Nothing has been deployed yet. Read the files below, then prove they boot.</p>
+          <h2 class="text-xl font-semibold tracking-tight mb-1">Configuration ready</h2>
+          <p class="text-fg2">Nothing has been deployed yet. Read the files below, then prove they boot.</p>
         </div>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label class="cursor-pointer">
-          <input type="radio" name="verify-target" value="ephemeral" class="peer sr-only" checked/>
-          <div class="h-full bg-surface-container p-4 rounded-lg border border-white/5 peer-checked:border-primary peer-checked:bg-primary/10 transition-colors">
-            <div class="font-label-caps text-label-caps text-on-surface mb-1">Throwaway project</div>
-            <div class="font-body-sm text-body-sm text-on-surface-variant">Runs on Zeroth's own account and is destroyed the moment it finishes. Nothing to clean up, nothing to pay for.</div>
+        <label class="choice cursor-pointer relative block">
+          <input type="radio" name="verify-target" value="ephemeral" checked/>
+          <div class="choice-body">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <span class="font-medium text-sm">Throwaway project</span>
+              <span class="pill pill-idle">Free</span>
+            </div>
+            <p class="text-sm text-fg2">Runs on Zeroth's account and is destroyed the moment it finishes. Nothing to clean up.</p>
           </div>
         </label>
-        <label class="cursor-pointer">
-          <input type="radio" name="verify-target" value="account" class="peer sr-only"/>
-          <div class="h-full bg-surface-container p-4 rounded-lg border border-white/5 peer-checked:border-primary peer-checked:bg-primary/10 transition-colors">
-            <div class="font-label-caps text-label-caps text-on-surface mb-1">My Zerops account</div>
-            <div class="font-body-sm text-body-sm text-on-surface-variant">Deploys into your own account and leaves it running, so a verified project is yours to keep.</div>
+        <label class="choice cursor-pointer relative block">
+          <input type="radio" name="verify-target" value="account"/>
+          <div class="choice-body">
+            <div class="flex items-center justify-between gap-2 mb-1.5">
+              <span class="font-medium text-sm">My Zerops account</span>
+              <span class="pill pill-idle">Kept</span>
+            </div>
+            <p class="text-sm text-fg2">Deploys into your own account and leaves it running, so a verified project is yours to keep.</p>
           </div>
         </label>
       </div>
 
       <div id="token-row" class="hidden flex-col gap-2">
-        <label for="zerops-token" class="font-label-caps text-label-caps text-on-surface-variant">Zerops personal access token</label>
-        <input id="zerops-token" type="password" autocomplete="off" spellcheck="false" class="bg-surface-container border border-white/10 rounded-lg px-4 py-3 font-code-sm text-code-sm text-white placeholder:text-outline-variant focus:border-primary focus:ring-0" placeholder="Used for this deployment only"/>
-        <p class="font-body-sm text-body-sm text-on-surface-variant">Used once, for this deployment, then discarded. It is never stored in Zeroth's database, its logs, or the downloadable bundle. Failed attempts are torn down; only a project that came up is left standing.</p>
+        <label for="zerops-token" class="text-sm font-medium">Zerops personal access token</label>
+        <input id="zerops-token" type="password" autocomplete="off" spellcheck="false"
+               class="field font-mono text-sm px-4 py-3 w-full" placeholder="Used for this deployment only"/>
+        <p class="text-sm text-fg2">
+          Used once, then discarded. It is never written to Zeroth's database, its logs, or the downloadable
+          bundle. Failed attempts are torn down; only a project that came up is left standing.
+        </p>
       </div>
 
       <div class="flex items-center gap-4 flex-wrap">
-        <button id="tryout-go" type="button" class="bg-primary text-on-primary font-label-caps text-label-caps px-6 py-3 rounded-lg hover:bg-primary-container transition-colors uppercase flex items-center gap-2">
+        <button id="tryout-go" type="button" class="btn btn-primary">
           <span class="material-symbols-outlined text-[18px]">play_arrow</span> Try it out
         </button>
-        <span class="font-body-sm text-body-sm text-on-surface-variant">Takes a few minutes — building is the slow part.</span>
-        <p id="tryout-err" class="font-body-sm text-body-sm text-error hidden w-full"></p>
+        <span class="text-sm text-fg2">Takes a few minutes — building is the slow part.</span>
+        <p id="tryout-err" class="text-sm text-danger hidden w-full" role="alert"></p>
       </div>
-    </div>
+    </section>
 
-    <!-- Result bento grid -->
+    <!-- Config + evidence -->
     <div id="result-grid" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 space-y-6">
-        <section class="glass-panel rounded-lg overflow-hidden flex flex-col h-[420px]">
-          <div class="border-b border-white/10 flex px-4">
-            <button type="button" class="px-6 py-4 font-code-sm text-code-sm border-b-2 border-primary text-primary" id="tab-import">zerops-project-import.yaml</button>
-            <button type="button" class="px-6 py-4 font-code-sm text-code-sm border-b-2 border-transparent text-on-surface-variant hover:text-on-surface transition-colors" id="tab-zerops">zerops.yaml</button>
+      <div class="lg:col-span-2 flex flex-col gap-6">
+        <section class="card overflow-hidden flex flex-col h-[460px]">
+          <div class="flex items-center justify-between border-b border-edge pl-2 pr-3">
+            <div class="flex">
+              <button type="button" id="tab-import" class="px-4 py-3 font-mono text-[13px] border-b-2 border-accent text-accent">zerops-project-import.yaml</button>
+              <button type="button" id="tab-zerops" class="px-4 py-3 font-mono text-[13px] border-b-2 border-transparent text-fg2 hover:text-fg transition-colors">zerops.yaml</button>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="pill pill-idle hidden" id="config-badge">Verified</span>
+              <button type="button" id="copy-config" class="btn btn-secondary !px-2.5 !py-1.5 text-xs" title="Copy to clipboard">
+                <span class="material-symbols-outlined text-[15px]">content_copy</span> Copy
+              </button>
+            </div>
           </div>
-          <div class="code-container p-6 flex-grow overflow-auto">
-            <pre class="font-code-sm text-code-sm text-on-surface-variant" id="import-yaml"></pre>
-            <pre class="font-code-sm text-code-sm text-on-surface-variant hidden" id="zerops-yaml"></pre>
+          <div class="code-surface flex-grow overflow-auto scroll-thin p-5 border-0">
+            <pre class="font-mono text-[12.5px] leading-relaxed" id="import-yaml"></pre>
+            <pre class="font-mono text-[12.5px] leading-relaxed hidden" id="zerops-yaml"></pre>
           </div>
         </section>
 
-        <section class="glass-panel rounded-lg p-6">
-          <div class="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
-            <span class="material-symbols-outlined text-outline">description</span>
-            <h2 class="font-headline-md text-headline-md">Why each service exists</h2>
-          </div>
-          <div class="markdown-body font-body-sm text-on-surface-variant space-y-4" id="why-services"></div>
-          <div class="flex flex-col sm:flex-row gap-3 mt-6 pt-6 border-t border-white/10">
-            <a id="download" href="#" class="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-on-primary rounded font-body-sm hover:brightness-110 transition-all">
-              <span class="material-symbols-outlined">download</span> Download bundle
+        <section class="card p-6">
+          <h2 class="font-semibold mb-1">Why these services</h2>
+          <p class="text-sm text-fg2 mb-4">Each service traces back to a file in your repository.</p>
+          <div class="flex flex-col gap-2.5" id="why-services"></div>
+          <div class="flex flex-col sm:flex-row gap-2.5 mt-6">
+            <a id="download" href="#" class="btn btn-primary">
+              <span class="material-symbols-outlined text-[18px]">download</span> Download bundle
             </a>
-            <a id="repo-link" href="#" target="_blank" rel="noopener" class="flex items-center justify-center gap-2 px-6 py-3 border border-outline-variant text-on-surface rounded font-body-sm hover:bg-white/5 transition-all">
-              <span class="material-symbols-outlined">open_in_new</span> View repository
+            <a id="repo-link-2" href="#" target="_blank" rel="noopener" class="btn btn-secondary">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span> View repository
             </a>
           </div>
         </section>
       </div>
 
-      <div class="space-y-6">
-        <section class="glass-panel rounded-lg p-6 h-full">
-          <div class="flex items-center gap-3 mb-6">
-            <span class="material-symbols-outlined text-outline">account_tree</span>
-            <h2 class="font-headline-md text-headline-md">Architecture boot log</h2>
-          </div>
-          <div class="space-y-3" id="boot-log"></div>
-        </section>
-      </div>
+      <section class="card p-6 h-fit">
+        <h2 class="font-semibold mb-1">Services</h2>
+        <p class="text-sm text-fg2 mb-4">Health is only claimed after a verification run.</p>
+        <div class="flex flex-col gap-2.5" id="boot-log"></div>
+      </section>
     </div>
+
   </div>
+</div>
 </main>
 
-<footer class="w-full py-8 px-margin-mobile md:px-margin-desktop flex flex-col md:flex-row justify-between items-center gap-4 bg-surface-container-lowest border-t border-white/5 mt-auto">
-  <div class="font-label-caps text-label-caps text-on-surface-variant">© 2026 Zeroth by Zerops</div>
-  <div class="flex gap-6 items-center">
-    <a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="about.html">How it works</a>
-    <a class="font-body-sm text-body-sm text-on-surface-variant hover:text-primary transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
-    <span class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-2" id="api-status">
-      <span class="w-2 h-2 rounded-full bg-outline inline-block"></span> API status
-    </span>
+<footer class="border-t border-edge mt-auto">
+  <div class="max-w-content mx-auto px-5 md:px-8 py-7 flex flex-col md:flex-row justify-between items-center gap-4">
+    <div class="text-sm text-fg3">© 2026 Zeroth · built on Zerops</div>
+    <div class="flex gap-6 items-center text-sm">
+      <a class="text-fg2 hover:text-fg transition-colors" href="about.html">How it works</a>
+      <a class="text-fg2 hover:text-fg transition-colors" href="https://github.com/SamChawla/zeroth" target="_blank" rel="noopener">Source</a>
+      <span class="text-fg2 flex items-center gap-2" id="api-status">
+        <span class="dot bg-fg3"></span><span data-label>API status</span>
+      </span>
+    </div>
   </div>
 </footer>
 
+<script src="config.js"></script>
 <script src="common.js"></script>
 <script src="run.js"></script>
 </body>

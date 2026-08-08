@@ -5,7 +5,7 @@ let elapsedTimer = null;
 
 /* ---------- terminal ---------- */
 
-function logLine(text, cls = "text-outline") {
+function logLine(text, cls = "text-zinc-400") {
   const el = $("terminal");
   if (!el) return;
   const div = document.createElement("div");
@@ -36,10 +36,10 @@ function stopClock() {
 /* ---------- stage pill helpers ---------- */
 
 const PILL = {
-  pending: "font-label-caps text-label-caps text-outline bg-surface-container px-2 py-1 rounded-DEFAULT",
-  active: "font-label-caps text-label-caps text-tertiary bg-tertiary/10 px-2 py-1 rounded-DEFAULT flex items-center gap-1 w-fit",
-  complete: "font-label-caps text-label-caps text-primary bg-primary/10 px-2 py-1 rounded-DEFAULT",
-  failed: "font-label-caps text-label-caps text-error bg-error/10 px-2 py-1 rounded-DEFAULT",
+  pending: "pill pill-idle",
+  active: "pill pill-running",
+  complete: "pill pill-verified",
+  failed: "pill pill-failed",
 };
 
 function setStage(stage, state, text) {
@@ -49,7 +49,7 @@ function setStage(stage, state, text) {
   card.classList.toggle("opacity-60", state === "pending");
   tag.className = PILL[state] || PILL.pending;
   tag.innerHTML = state === "active"
-    ? `<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> ${escape(text)}`
+    ? `<span class="material-symbols-outlined text-[13px] animate-spin">progress_activity</span> ${escape(text)}`
     : escape(text);
 }
 
@@ -83,7 +83,7 @@ function resetRun() {
   setStage("reason", "pending", "Pending");
   setStage("verify", "pending", "Pending");
   $("run-provider").textContent = "—";
-  $("live-dot").className = "w-3 h-3 rounded-full bg-primary pulse-dot";
+  $("live-dot").className = "dot bg-accent pulse";
   show("run");
   startClock();
 }
@@ -127,7 +127,7 @@ function handle(msg, jobId) {
       if (["validating", "ingesting"].includes(msg.status)) setStage("fingerprint", "active", "Running");
       if (["analyzing", "generating"].includes(msg.status)) setStage("reason", "active", "Generating");
       if (msg.status === "verifying") setStage("verify", "active", "Verifying");
-      if (msg.status === "failed") logLine(`[failed] ${msg.detail || ""}`, "text-error");
+      if (msg.status === "failed") logLine(`[failed] ${msg.detail || ""}`, "text-red-400");
       break;
     case "fingerprint":
       renderEvidence(msg.fingerprint);
@@ -152,8 +152,8 @@ function handle(msg, jobId) {
       setStage("verify", "pending", "Not run");
       $("stage-verify-note").textContent =
         "Nothing has been provisioned. Start a verification to prove this configuration boots.";
-      logLine("[ready] configuration generated — nothing deployed", "text-tertiary");
-      $("live-dot").className = "w-3 h-3 rounded-full bg-tertiary";
+      logLine("[ready] configuration generated — nothing deployed", "text-indigo-300");
+      $("live-dot").className = "dot bg-accent";
       if (msg.verifiable !== false) showTryout();
       break;
     case "verify_rejected":
@@ -168,39 +168,42 @@ function handle(msg, jobId) {
       $("stage-verify-note").textContent = `Attempt ${msg.attempt} — provisioning via ${msg.provider}.`;
       $("run-provider").textContent = msg.provider;
       addAttempt(msg.attempt, msg.provider);
-      logLine(`> attempt ${msg.attempt} — provisioning via ${msg.provider}`, "text-primary-fixed");
+      logLine(`> attempt ${msg.attempt} — provisioning via ${msg.provider}`, "text-indigo-300");
       break;
     case "stage":
       logLine(`  ${msg.stage}… (attempt ${msg.attempt})`);
-      appendAttempt(msg.attempt, `<div class="font-body-sm text-body-sm text-on-surface-variant">${escape(msg.stage)}…</div>`);
+      appendAttempt(msg.attempt, `<div class="text-sm text-fg2 flex items-center gap-2"><span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>${escape(msg.stage)}…</div>`);
       break;
     case "attempt_failed":
-      logLine(`FAIL attempt ${msg.attempt}: ${msg.failure_class} — ${msg.error || ""}`, "text-error");
+      logLine(`FAIL attempt ${msg.attempt}: ${msg.failure_class} — ${msg.error || ""}`, "text-red-400");
       appendAttempt(msg.attempt, `
-        <div class="font-label-caps text-label-caps text-error">Failed — ${escape(msg.failure_class)}</div>
-        <div class="font-body-sm text-body-sm text-on-surface-variant">${escape(msg.error || "")}</div>
-        ${msg.logs ? `<pre class="font-code-sm text-code-sm text-error/80 bg-[#050810] rounded p-3 mt-2 overflow-x-auto">${escape(msg.logs)}</pre>` : ""}`);
+        <div><span class="pill pill-failed">Failed — ${escape(msg.failure_class)}</span></div>
+        <div class="text-sm text-fg2">${escape(msg.error || "")}</div>
+        ${msg.logs ? `<pre class="code-surface rounded-xl p-3 mt-1 font-mono text-[12px] leading-relaxed overflow-x-auto scroll-thin">${escape(msg.logs)}</pre>` : ""}`);
       break;
     case "repair_proposed":
-      logLine(`REPAIR: ${msg.diagnosis}`, "text-tertiary");
+      logLine(`REPAIR: ${msg.diagnosis}`, "text-amber-300");
       appendAttempt(msg.attempt, `
-        <div class="font-body-sm text-body-sm text-on-surface-variant"><strong class="text-on-surface">Diagnosis:</strong> ${escape(msg.diagnosis)}</div>
-        <div class="font-body-sm text-body-sm text-on-surface-variant"><strong class="text-on-surface">Repair:</strong> ${escape(msg.patch_summary)}</div>`);
+        <div class="rounded-xl border border-edge bg-surface p-3 flex flex-col gap-1.5">
+          <span class="pill pill-warning w-fit">Repaired &amp; retried</span>
+          <div class="text-sm text-fg2"><strong class="text-fg font-medium">Diagnosis:</strong> ${escape(msg.diagnosis)}</div>
+          <div class="text-sm text-fg2"><strong class="text-fg font-medium">Repair:</strong> ${escape(msg.patch_summary)}</div>
+        </div>`);
       break;
     case "attempt_passed":
-      logLine(`PASS attempt ${msg.attempt} in ${msg.elapsed}s`, "text-primary-fixed");
+      logLine(`PASS attempt ${msg.attempt} in ${msg.elapsed}s`, "text-emerald-400");
       appendAttempt(msg.attempt, `
-        <div class="font-label-caps text-label-caps text-primary">Verified in ${msg.elapsed}s</div>
-        <div class="font-body-sm text-body-sm text-on-surface-variant">${escape(JSON.stringify(msg.verification || {}))}</div>`);
+        <div><span class="pill pill-verified"><span class="dot bg-success"></span> Verified in ${msg.elapsed}s</span></div>
+        <div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(msg.verification || {}))}</div>`);
       setStage("verify", "complete", "Verified");
       break;
     case "kept":
-      logLine(`KEPT project ${msg.project_id} in your account — ${msg.url || "no public URL"}`, "text-primary-fixed");
+      logLine(`KEPT project ${msg.project_id} in your account — ${msg.url || "no public URL"}`, "text-emerald-400");
       break;
     case "complete":
       stopClock();
       hide("tryout");
-      logLine(`DONE — verified=${msg.verified}`, msg.verified ? "text-primary-fixed" : "text-tertiary");
+      logLine(`DONE — verified=${msg.verified}`, msg.verified ? "text-emerald-400" : "text-amber-300");
       if (!msg.verified) setStage("verify", "failed", "Not verified");
       renderResult(msg.verified, msg.live_url, msg.kept_project_id);
       break;
@@ -218,31 +221,36 @@ function renderEvidence(fp) {
     ["Config files", (fp.present_files || []).join(", ") || "none"],
   ];
   $("evidence").innerHTML = tiles.map(([label, value]) => `
-    <div class="bg-surface-container p-3 rounded-lg border border-white/5">
-      <div class="font-label-caps text-label-caps text-on-surface-variant mb-1">${escape(label)}</div>
-      <div class="font-code-sm text-code-sm text-on-surface truncate">${escape(value)}</div>
+    <div class="bg-surface2 border border-edge rounded-xl p-3.5 animate-fade-up">
+      <div class="text-[11px] uppercase tracking-wider text-fg3 mb-1.5">${escape(label)}</div>
+      <div class="font-mono text-[13px] text-fg truncate" title="${escape(value)}">${escape(value)}</div>
     </div>`).join("");
 }
 
 function renderServices(manifest) {
   if (!manifest || !manifest.services) return;
   $("services").innerHTML = manifest.services.map((s) => `
-    <div class="bg-surface-container p-3 rounded-lg border border-white/5">
-      <div class="flex items-center gap-2 font-code-sm text-code-sm text-on-surface">
-        <span class="font-bold">${escape(s.hostname)}</span>
-        ${s.public ? '<span class="font-label-caps text-label-caps text-primary bg-primary/10 px-1.5 py-0.5 rounded">public</span>' : ""}
-        <span class="text-outline">${escape(s.type)}</span>
+    <div class="bg-surface2 border border-edge rounded-xl p-3.5 animate-fade-up">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-mono text-[13px] font-semibold text-fg" data-hostname>${escape(s.hostname)}</span>
+        <span class="font-mono text-[12px] text-fg3">${escape(s.type)}</span>
+        ${s.public ? '<span class="pill pill-running">public</span>' : ""}
       </div>
-      <div class="font-body-sm text-body-sm text-on-surface-variant mt-1">${escape(s.reason || "No reason recorded.")}</div>
+      <div class="text-sm text-fg2 mt-1.5">${escape(s.reason || "No reason recorded.")}</div>
     </div>`).join("");
 }
 
 function addAttempt(n, provider) {
   if ($(`attempt-${n}`)) return;
   const el = document.createElement("div");
-  el.className = "bg-surface-container rounded-lg border border-white/5 p-4";
+  el.className = "bg-surface2 border border-edge rounded-xl p-4 animate-fade-up";
   el.id = `attempt-${n}`;
-  el.innerHTML = `<div class="font-label-caps text-label-caps text-on-surface-variant mb-2">Attempt ${n} — via ${escape(provider)}</div><div id="attempt-${n}-body" class="flex flex-col gap-2"></div>`;
+  el.innerHTML = `
+    <div class="flex items-center justify-between gap-3 mb-2.5">
+      <span class="text-[11px] uppercase tracking-wider text-fg3">Attempt ${n}</span>
+      <span class="font-mono text-[11px] text-fg3">${escape(provider)}</span>
+    </div>
+    <div id="attempt-${n}-body" class="flex flex-col gap-2"></div>`;
   $("attempt-list").appendChild(el);
 }
 
@@ -256,64 +264,89 @@ function appendAttempt(n, html) {
    meaningful whether or not anyone ever asks for a deployment. */
 function renderConfig() {
   $("why-services").innerHTML = Array.from(document.querySelectorAll("#services > div")).map((el) => el.outerHTML).join("")
-    || '<p class="font-body-sm text-body-sm text-on-surface-variant">No services were generated.</p>';
+    || '<p class="text-sm text-fg2">No services were generated.</p>';
   renderBootLog(null);
   show("result-grid");
 }
 
 function renderBootLog(verified) {
   const state = verified === null
-    ? { dot: "bg-outline", pill: "text-outline bg-surface-container", label: "NOT DEPLOYED" }
+    ? { dot: "bg-fg3", pill: "pill pill-idle", label: "Not deployed" }
     : verified
-      ? { dot: "bg-emerald-400", pill: "text-emerald-400 bg-emerald-400/10", label: "HEALTHY" }
-      : { dot: "bg-outline", pill: "text-outline bg-surface-container", label: "UNVERIFIED" };
+      ? { dot: "bg-success", pill: "pill pill-verified", label: "Healthy" }
+      : { dot: "bg-fg3", pill: "pill pill-idle", label: "Unverified" };
 
   $("boot-log").innerHTML = "";
   document.querySelectorAll("#services > div").forEach((svcEl) => {
-    const hostname = svcEl.querySelector(".font-bold")?.textContent || "";
+    const hostname = svcEl.querySelector("[data-hostname]")?.textContent || "";
     $("boot-log").insertAdjacentHTML("beforeend", `
-      <div class="flex items-center justify-between p-3 rounded bg-surface/50 border border-white/5">
-        <div class="flex items-center gap-3">
-          <span class="w-2 h-2 rounded-full ${state.dot}"></span>
-          <span class="font-code-sm text-code-sm font-bold">${escape(hostname)}</span>
+      <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-surface2 border border-edge">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="dot ${state.dot}"></span>
+          <span class="font-mono text-[13px] truncate">${escape(hostname)}</span>
         </div>
-        <span class="font-label-caps text-label-caps ${state.pill} px-2 py-1 rounded">${state.label}</span>
+        <span class="${state.pill}">${state.label}</span>
       </div>`);
   });
 }
 
 function renderResult(verified, liveUrl, keptProjectId) {
   const banner = $("result-banner");
-  banner.className = `glass-panel rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-l-4 ${
-    verified ? "border-l-emerald-400 bg-emerald-500/10" : "border-l-tertiary bg-tertiary/10"
-  }`;
+  banner.className = "card card-raised p-7 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6";
+  banner.style.borderLeft = `3px solid rgb(var(${verified ? "--success" : "--warning"}))`;
 
-  const kept = verified && keptProjectId
-    ? `<p class="font-body-sm text-body-sm text-on-surface-variant mt-2">Left running in your account as project <span class="font-code-sm">${escape(keptProjectId)}</span>.</p>`
+  const attempts = document.querySelectorAll("#attempt-list > div").length || 1;
+  const environment = keptProjectId ? "Your account" : "Ephemeral";
+  const meta = [
+    ["Status", verified ? "Healthy" : "Not verified"],
+    ["Attempts", String(attempts)],
+    ["Environment", environment],
+    ["Verification", verified ? "Passed" : "Failed"],
+  ];
+
+  const kept = keptProjectId
+    ? `<p class="text-sm text-fg2 mt-2.5">Left running in your account as project <span class="font-mono">${escape(keptProjectId)}</span>.</p>`
     : verified
-      ? '<p class="font-body-sm text-body-sm text-on-surface-variant mt-2">The throwaway project has been destroyed.</p>'
+      ? '<p class="text-sm text-fg2 mt-2.5">The throwaway project has been destroyed, as designed.</p>'
       : "";
-  const link = verified && liveUrl
-    ? `<a href="${escape(liveUrl)}" target="_blank" rel="noopener" class="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded font-body-sm hover:brightness-110 transition-all whitespace-nowrap">
-         <span class="material-symbols-outlined text-[18px]">open_in_new</span> Open it
-       </a>`
-    : "";
 
   banner.innerHTML = `
-    <div class="flex items-center gap-6">
-      <div class="w-16 h-16 rounded-full flex items-center justify-center shrink-0 ${verified ? "bg-success-container" : "bg-surface-container-high"}">
-        <span class="material-symbols-outlined text-4xl ${verified ? "text-on-success-container" : "text-tertiary"}">${verified ? "check_circle" : "report"}</span>
+    <div class="flex items-start gap-5 min-w-0">
+      <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${verified ? "bg-success/12 text-success" : "bg-warning/14 text-warning"}">
+        <span class="material-symbols-outlined text-[24px]">${verified ? "check_circle" : "error"}</span>
       </div>
-      <div>
-        <h1 class="font-headline-xl text-headline-xl ${verified ? "text-primary-fixed" : "text-tertiary-fixed"} mb-2">${verified ? "VERIFIED" : "NOT VERIFIED"}</h1>
-        <p class="font-body-lg text-body-lg text-on-surface-variant">${verified
-          ? "Zeroth deployed this repository and confirmed it started."
-          : "It did not come up within the attempt limit. Review the trail above before deploying by hand."}</p>
+      <div class="min-w-0">
+        <h2 class="text-xl font-semibold tracking-tight mb-1.5">${verified ? "Deployment verified" : "Deployment verification failed"}</h2>
+        <p class="text-fg2">${verified
+          ? "The generated Zerops configuration deployed and the application booted correctly."
+          : "The configuration did not come up within the attempt limit. The trail above shows each attempt and what it hit."}</p>
         ${kept}
+        <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 mt-5">
+          ${meta.map(([k, v]) => `
+            <div>
+              <dt class="text-[11px] uppercase tracking-wider text-fg3 mb-0.5">${escape(k)}</dt>
+              <dd class="text-sm font-medium ${k === "Status" && verified ? "text-success" : ""}">${escape(v)}</dd>
+            </div>`).join("")}
+        </dl>
       </div>
     </div>
-    ${link}`;
+    <div class="flex flex-col gap-2.5 shrink-0">
+      ${verified && liveUrl
+        ? `<a href="${escape(liveUrl)}" target="_blank" rel="noopener" class="btn btn-primary">
+             <span class="material-symbols-outlined text-[18px]">open_in_new</span> View deployment
+           </a>` : ""}
+      <a href="#result-grid" class="btn btn-secondary">
+        <span class="material-symbols-outlined text-[18px]">code</span> View configuration
+      </a>
+    </div>`;
   show("result-banner");
+
+  if (verified) {
+    const badge = $("config-badge");
+    badge.className = "pill pill-verified";
+    badge.textContent = "Verified";
+    show("config-badge");
+  }
 
   renderBootLog(verified);
   renderConfig();
@@ -364,10 +397,10 @@ async function requestVerify() {
     $("zerops-token").value = "";
     hide("tryout");
     hide("result-banner");
-    $("live-dot").className = "w-3 h-3 rounded-full bg-primary pulse-dot";
+    $("live-dot").className = "dot bg-accent pulse";
     setStage("verify", "active", "Verifying");
     startClock();
-    logLine(`> verification requested — target ${target}`, "text-primary-fixed");
+    logLine(`> verification requested — target ${target}`, "text-indigo-300");
     listen(currentJob);
   } catch (e) {
     tryoutError(e.message);
@@ -390,15 +423,96 @@ function initTabs() {
   const importTab = $("tab-import"), zeropsTab = $("tab-zerops");
   const importPre = $("import-yaml"), zeropsPre = $("zerops-yaml");
   const activate = (tab, other, pre, otherPre) => {
-    tab.classList.add("border-primary", "text-primary");
-    tab.classList.remove("border-transparent", "text-on-surface-variant");
-    other.classList.remove("border-primary", "text-primary");
-    other.classList.add("border-transparent", "text-on-surface-variant");
+    tab.classList.add("border-accent", "text-accent");
+    tab.classList.remove("border-transparent", "text-fg2");
+    other.classList.remove("border-accent", "text-accent");
+    other.classList.add("border-transparent", "text-fg2");
     pre.classList.remove("hidden");
     otherPre.classList.add("hidden");
   };
   importTab.addEventListener("click", () => activate(importTab, zeropsTab, importPre, zeropsPre));
   zeropsTab.addEventListener("click", () => activate(zeropsTab, importTab, zeropsPre, importPre));
+
+  $("copy-config").addEventListener("click", async (e) => {
+    const visible = $("import-yaml").classList.contains("hidden") ? $("zerops-yaml") : $("import-yaml");
+    const btn = e.currentTarget;
+    const original = btn.innerHTML;
+    try {
+      await navigator.clipboard.writeText(visible.textContent || "");
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">check</span> Copied';
+    } catch {
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">close</span> Failed';
+    }
+    setTimeout(() => { btn.innerHTML = original; }, 1600);
+  });
+}
+
+/* ---------- rebuilding a finished run from its stored record ---------- */
+
+const TERMINAL_STATES = ["ready", "done", "failed"];
+
+function hydrate(job) {
+  $("repo-name").textContent = job.repo_name || job.repo_url;
+  $("repo-link").href = job.repo_url;
+  if ($("repo-link-2")) $("repo-link-2").href = job.repo_url;
+  document.title = `${job.repo_name || job.repo_url} — Zeroth`;
+  stopClock();
+  $("live-dot").className = TERMINAL_STATES.includes(job.status) ? "dot bg-fg3" : "dot bg-accent pulse";
+
+  if (job.fingerprint) {
+    renderEvidence(job.fingerprint);
+    setStage("fingerprint", "complete", "Complete");
+  }
+  if (job.manifest) {
+    renderServices(job.manifest);
+    setStage("reason", "complete", "Complete");
+  }
+
+  const artifact = (kind) => (job.artifacts || []).find((a) => a.kind === kind);
+  const importYaml = artifact("import_yaml");
+  const zeropsYaml = artifact("zerops_yaml");
+  if (importYaml) $("import-yaml").textContent = importYaml.content;
+  if (zeropsYaml) $("zerops-yaml").textContent = zeropsYaml.content;
+  if (importYaml || zeropsYaml) {
+    $("download").href = `${API}/api/jobs/${job.id}/bundle`;
+    renderConfig();
+  }
+
+  (job.runs || []).forEach((r) => {
+    addAttempt(r.attempt_no, job.verify_target || "zerops");
+    if (r.status === "passed") {
+      appendAttempt(r.attempt_no, `
+        <div><span class="pill pill-verified"><span class="dot bg-success"></span> Verified</span></div>
+        <div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(r.verification || {}))}</div>`);
+    } else {
+      appendAttempt(r.attempt_no, `
+        <div><span class="pill pill-failed">Failed — ${escape(r.failure_class)}</span></div>
+        <div class="text-sm text-fg2">${escape(r.failure_message || "")}</div>`);
+    }
+    if (r.diagnosis) {
+      appendAttempt(r.attempt_no, `
+        <div class="rounded-xl border border-edge bg-surface p-3 flex flex-col gap-1.5">
+          <span class="pill pill-warning w-fit">Repaired &amp; retried</span>
+          <div class="text-sm text-fg2"><strong class="text-fg font-medium">Diagnosis:</strong> ${escape(r.diagnosis)}</div>
+          ${r.patch_summary ? `<div class="text-sm text-fg2"><strong class="text-fg font-medium">Repair:</strong> ${escape(r.patch_summary)}</div>` : ""}
+        </div>`);
+    }
+  });
+
+  if (job.status === "ready") {
+    setStage("verify", "pending", "Not run");
+    $("stage-verify-note").textContent =
+      "Nothing has been provisioned. Start a verification to prove this configuration boots.";
+    showTryout();
+  } else if (job.status === "done") {
+    setStage("verify", job.verified ? "complete" : "failed", job.verified ? "Verified" : "Not verified");
+    $("stage-verify-note").textContent = job.stage_detail || "";
+    renderResult(job.verified, job.live_url, job.kept_project_id);
+  } else if (job.status === "failed") {
+    setStage("verify", "failed", "Failed");
+    $("stage-verify-note").textContent = job.error || job.stage_detail || "The run failed.";
+    logLine(`[failed] ${job.error || job.stage_detail || ""}`, "text-red-400");
+  }
 }
 
 /* ---------- entry ---------- */
@@ -413,16 +527,19 @@ async function init() {
     hide("console-panel");
     show("viewing-note");
     resetRun();
+    let job = null;
     try {
       const res = await fetch(`${API}/api/jobs/${jobId}`);
-      if (res.ok) {
-        const job = await res.json();
-        $("repo-name").textContent = job.repo_name || job.repo_url;
-        $("repo-link").href = job.repo_url;
-        document.title = `${job.repo_name || job.repo_url} — Zeroth`;
-      }
-    } catch { /* the live stream still renders without this */ }
-    listen(jobId);
+      if (res.ok) job = await res.json();
+    } catch { /* fall back to the live stream below */ }
+
+    if (job) hydrate(job);
+
+    // The event replay buffer expires after a day, so a finished run has to be
+    // rebuilt from its stored record - otherwise every showcase link older than
+    // 24h opens blank. A terminal job has nothing live left to send, so there is
+    // no reason to open a stream for it at all.
+    if (!job || !TERMINAL_STATES.includes(job.status)) listen(jobId);
     return;
   }
 
@@ -432,6 +549,7 @@ async function init() {
     if (!url) return;
     $("repo-name").textContent = url;
     $("repo-link").href = url;
+    if ($("repo-link-2")) $("repo-link-2").href = url;
     start(url);
   });
 }

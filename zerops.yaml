@@ -9,6 +9,7 @@ zerops:
       deployFiles: ./
     run:
       base: python@3.12
+      os: ubuntu
       ports:
         - port: 8000
           httpSupport: true
@@ -25,6 +26,7 @@ zerops:
       deployFiles: ./
     run:
       base: python@3.12
+      os: ubuntu
       prepareCommands:
         - apt-get update && apt-get install -y git
         - pip install -r requirements.txt

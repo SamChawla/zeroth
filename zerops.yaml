@@ -42,7 +42,7 @@ zerops:
     build:
       base: nodejs@latest
       os: alpine
-      deployFiles: web/~
+      deployFiles: ./web
     run:
       base: static
       ports:

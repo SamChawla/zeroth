@@ -11,6 +11,7 @@ from zeroth.models import Artifact, Job, Run
 from zeroth.safety import RepoRejected, normalise, preflight_size
 from zeroth.worker import ingest, pathfinder
 from zeroth.worker.analyze import analyze
+from zeroth.worker.compatibility import assess
 from zeroth.worker.fingerprint import build as build_fingerprint
 from zeroth.worker.generate import render_import_yaml, render_report, render_zerops_yaml
 from zeroth.worker.providers import get_provider
@@ -60,6 +61,14 @@ def process_analyze(job_id: str) -> None:
         job.fingerprint = fp.to_dict()
         db.commit()
         bus.publish(job.id, "fingerprint", {"fingerprint": job.fingerprint})
+
+        # Answer "can this be deployed at all?" before spending a model call on
+        # how. Deterministic and free, so it costs nothing to always run it.
+        _set_status(db, job, "checking", "Checking deployability")
+        report = assess(fp)
+        job.compatibility = report.to_dict()
+        db.commit()
+        bus.publish(job.id, "compatibility", {"compatibility": job.compatibility})
 
         _set_status(db, job, "analyzing", "Deciding the architecture")
         manifest = analyze(fp)

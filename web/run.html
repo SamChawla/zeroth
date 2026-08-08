@@ -102,6 +102,22 @@
       </div>
     </section>
 
+    <!-- Deployability verdict. Answered from the fingerprint before any config
+         is written, so it leads rather than trailing the run. -->
+    <section id="compat" class="hidden card p-6 md:p-7">
+      <div class="flex items-start gap-4 mb-1">
+        <div class="step-icon" id="compat-icon"><span class="material-symbols-outlined text-[20px]">fact_check</span></div>
+        <div class="min-w-0 flex-grow">
+          <div class="flex items-center gap-3 flex-wrap mb-1">
+            <div class="step-num">DEPLOYABILITY</div>
+            <span class="pill pill-idle" id="compat-verdict">Checking</span>
+          </div>
+          <h2 class="text-lg font-semibold tracking-tight" id="compat-headline">Checking the repository…</h2>
+        </div>
+      </div>
+      <div class="flex flex-col gap-2.5 mt-4" id="compat-findings"></div>
+    </section>
+
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
       <!-- Pipeline -->

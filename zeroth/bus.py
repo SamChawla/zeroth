@@ -81,13 +81,27 @@ def replay(job_id: str) -> list[str]:
     return client().lrange(f"{channel(job_id)}:log", 0, -1)
 
 
+def _rate_key(ip: str) -> str:
+    return f"zeroth:rl:{ip}"
+
+
 def rate_limited(ip: str) -> bool:
-    key = f"zeroth:rl:{ip}"
+    """Is this client already over the limit? Read-only.
+
+    Split from consumption so a request that gets rejected for some other
+    reason - a bad URL, an oversized repository - does not burn quota the
+    caller never got any work out of.
+    """
+    count = client().get(_rate_key(ip))
+    return int(count or 0) >= settings.rate_limit_per_hour
+
+
+def rate_consume(ip: str) -> None:
+    """Count one accepted request against the hourly budget."""
+    key = _rate_key(ip)
     r = client()
-    count = r.incr(key)
-    if count == 1:
+    if r.incr(key) == 1:
         r.expire(key, 3600)
-    return count > settings.rate_limit_per_hour
 
 
 def acquire_run_slot() -> bool:

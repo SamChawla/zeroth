@@ -53,6 +53,7 @@ class JobOut(BaseModel):
     status: str
     stage_detail: str
     fingerprint: dict | None
+    compatibility: dict | None = None
     manifest: dict | None
     error: str
     created_at: datetime

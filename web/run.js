@@ -79,6 +79,7 @@ function resetRun() {
   hide("result-grid");
   hide("tryout");
   hide("tryout-err");
+  hide("compat");
   setStage("fingerprint", "pending", "Pending");
   setStage("reason", "pending", "Pending");
   setStage("verify", "pending", "Pending");
@@ -125,13 +126,16 @@ function handle(msg, jobId) {
     case "status":
       logLine(`[status] ${msg.status}${msg.detail ? " — " + msg.detail : ""}`);
       if (["validating", "ingesting"].includes(msg.status)) setStage("fingerprint", "active", "Running");
-      if (["analyzing", "generating"].includes(msg.status)) setStage("reason", "active", "Generating");
+      if (["analyzing", "generating", "checking"].includes(msg.status)) setStage("reason", "active", "Generating");
       if (msg.status === "verifying") setStage("verify", "active", "Verifying");
       if (msg.status === "failed") logLine(`[failed] ${msg.detail || ""}`, "text-red-400");
       break;
     case "fingerprint":
       renderEvidence(msg.fingerprint);
       setStage("fingerprint", "complete", "Complete");
+      break;
+    case "compatibility":
+      renderCompatibility(msg.compatibility);
       break;
     case "manifest":
       renderServices(msg.manifest);
@@ -225,6 +229,50 @@ function renderEvidence(fp) {
       <div class="text-[11px] uppercase tracking-wider text-fg3 mb-1.5">${escape(label)}</div>
       <div class="font-mono text-[13px] text-fg truncate" title="${escape(value)}">${escape(value)}</div>
     </div>`).join("");
+}
+
+/* Deployability. Amber for "needs changes" rather than red: the config still
+   gets generated, so it is a caveat, not a failure. */
+const VERDICT = {
+  deployable:    { pill: "pill pill-verified", label: "Deployable", icon: "check_circle", tone: "text-success" },
+  needs_changes: { pill: "pill pill-warning",  label: "Needs changes", icon: "build", tone: "text-warning" },
+  unsupported:   { pill: "pill pill-failed",   label: "Not deployable", icon: "block", tone: "text-danger" },
+};
+
+const FINDING = {
+  blocker: { icon: "block", tone: "text-danger", label: "Blocker" },
+  change:  { icon: "build", tone: "text-warning", label: "Change needed" },
+  note:    { icon: "info", tone: "text-fg3", label: "Note" },
+};
+
+function renderCompatibility(report) {
+  if (!report) return;
+  const v = VERDICT[report.verdict] || VERDICT.needs_changes;
+
+  $("compat-verdict").className = v.pill;
+  $("compat-verdict").textContent = v.label;
+  $("compat-headline").textContent = report.headline || "";
+  $("compat-icon").innerHTML = `<span class="material-symbols-outlined text-[20px] ${v.tone}">${v.icon}</span>`;
+
+  // Blockers first, then changes, then notes: severity order is the reading order.
+  const order = { blocker: 0, change: 1, note: 2 };
+  const findings = [...(report.findings || [])].sort(
+    (a, b) => (order[a.level] ?? 3) - (order[b.level] ?? 3));
+
+  $("compat-findings").innerHTML = findings.map((f) => {
+    const meta = FINDING[f.level] || FINDING.note;
+    return `
+      <div class="flex gap-3 rounded-xl border border-edge bg-surface2 p-3.5">
+        <span class="material-symbols-outlined text-[18px] ${meta.tone} shrink-0 mt-0.5">${meta.icon}</span>
+        <div class="min-w-0">
+          <div class="font-medium text-sm mb-0.5">${escape(f.title)}</div>
+          <p class="text-sm text-fg2">${escape(f.detail)}</p>
+          ${f.evidence ? `<p class="font-mono text-[12px] text-fg3 mt-1.5">${escape(f.evidence)}</p>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
+  show("compat");
 }
 
 function renderServices(manifest) {
@@ -459,6 +507,7 @@ function hydrate(job) {
   stopClock();
   $("live-dot").className = TERMINAL_STATES.includes(job.status) ? "dot bg-fg3" : "dot bg-accent pulse";
 
+  if (job.compatibility) renderCompatibility(job.compatibility);
   if (job.fingerprint) {
     renderEvidence(job.fingerprint);
     setStage("fingerprint", "complete", "Complete");

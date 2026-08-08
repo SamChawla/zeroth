@@ -5,29 +5,52 @@ from zeroth import bus
 from zeroth.config import settings
 from zeroth.db import get_session
 from zeroth.models import Job
-from zeroth.safety import RepoRejected, normalise
+from zeroth.safety import RepoRejected, normalise, preflight_size
 from zeroth.schemas import JobCreate, JobOut, VerifyRequest
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
+def client_ip(request: Request) -> str:
+    """The actual caller, not the platform proxy in front of us.
+
+    Every request arrives from Zerops' load balancer, so request.client.host is
+    the same private address for the entire internet - keying a per-IP limit on
+    it puts every visitor in one shared bucket.
+
+    X-Forwarded-For is "client, proxy1, proxy2 ..." where each hop appends the
+    address it received the request from. The entry OUR proxy appended is the
+    rightmost one, and it is the only entry a caller cannot forge by sending
+    the header themselves, so that is the one to trust.
+    """
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if hops:
+        return hops[-1]
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("", response_model=JobOut, status_code=201)
 def create_job(body: JobCreate, request: Request, db: Session = Depends(get_session)):
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     if bus.rate_limited(ip):
         raise HTTPException(
             429,
             "You have hit the hourly limit. Browse the gallery for completed runs.",
         )
 
+    # Validate before the job exists. An unsupported host, a malformed path or
+    # an oversized repository is knowable now, and answering here means the
+    # caller gets the real reason instead of watching a queued run fail.
     try:
         _, owner, repo = normalise(body.repo_url)
+        preflight_size(owner, repo)
     except RepoRejected as exc:
         raise HTTPException(400, str(exc)) from exc
 
     job = Job(repo_url=body.repo_url.strip(), repo_name=f"{owner}/{repo}")
     db.add(job)
     db.commit()
+    bus.rate_consume(ip)
     bus.enqueue(job.id)
     return job
 
@@ -67,9 +90,10 @@ def verify_job(
     elif settings.pathfinder_provider == "off":
         raise HTTPException(503, "Throwaway verification is disabled on this instance.")
 
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     if bus.rate_limited(ip):
         raise HTTPException(429, "You have hit the hourly limit. Try again later.")
+    bus.rate_consume(ip)
 
     job.status = "queued"
     job.stage_detail = "Queued for verification"

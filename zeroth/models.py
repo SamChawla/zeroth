@@ -20,7 +20,7 @@ def _now() -> datetime:
 # requested phase - "ready" is a terminal state for a job nobody asks to verify.
 JOB_STATES = (
     "queued", "validating", "ingesting", "analyzing",
-    "generating", "ready", "verifying", "repairing", "done", "failed",
+    "checking", "generating", "ready", "verifying", "repairing", "done", "failed",
 )
 
 # Where an explicitly requested verification run is sent.
@@ -40,6 +40,9 @@ class Job(Base):
     status: Mapped[str] = mapped_column(String(32), default="queued")
     stage_detail: Mapped[str] = mapped_column(String(300), default="")
     fingerprint: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Whether the repository can be deployed as-is, decided from the fingerprint
+    # before any configuration is generated. See worker/compatibility.py.
+    compatibility: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     manifest: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str] = mapped_column(Text, default="")
     is_gallery: Mapped[bool] = mapped_column(Boolean, default=False)

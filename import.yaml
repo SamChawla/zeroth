@@ -17,8 +17,8 @@ services:
       VALKEY_URL: redis://${cache_hostname}:6379/0
       EURI_API_KEY: ""
       GROQ_API_KEY: ""
-      ZEROPS_TOKEN: ""
-      ZEROPS_PROVIDER: simulated
+      ZCLI_TOKEN: ""
+      PATHFINDER_PROVIDER: simulated
 
   - hostname: worker
     type: python@3.12
@@ -31,8 +31,8 @@ services:
       VALKEY_URL: redis://${cache_hostname}:6379/0
       EURI_API_KEY: ""
       GROQ_API_KEY: ""
-      ZEROPS_TOKEN: ""
-      ZEROPS_PROVIDER: simulated
+      ZCLI_TOKEN: ""
+      PATHFINDER_PROVIDER: simulated
 
   - hostname: web
     type: static

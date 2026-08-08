@@ -73,7 +73,7 @@ def process(job_id: str) -> None:
 
         verified = False
         attempts = []
-        if settings.zerops_provider != "off":
+        if settings.pathfinder_provider != "off":
             slot = bus.acquire_run_slot()
             if slot:
                 _set_status(db, job, "verifying", "Sending a pathfinder run")
@@ -159,7 +159,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     init_db()
-    log.info("worker ready, provider=%s", settings.zerops_provider)
+    log.info("worker ready, provider=%s", settings.pathfinder_provider)
     while _running:
         job_id = bus.dequeue(timeout=5)
         if job_id:

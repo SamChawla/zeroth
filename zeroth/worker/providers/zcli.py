@@ -64,12 +64,12 @@ class ZcliProvider:
         if self._logged_in:
             return
         proc = subprocess.run(
-            ["zcli", "login", settings.zerops_token],
+            ["zcli", "login", settings.zcli_token],
             capture_output=True, text=True, timeout=30,
         )
         if proc.returncode != 0:
             raise ZcliError(
-                "zcli login failed — check ZEROPS_TOKEN: "
+                "zcli login failed — check ZCLI_TOKEN: "
                 + (proc.stderr.strip() or proc.stdout.strip())[:300]
             )
         self._logged_in = True

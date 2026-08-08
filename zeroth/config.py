@@ -17,8 +17,11 @@ class Settings(BaseSettings):
     # too large for one can still succeed against the next.
     groq_models: str = "llama-3.3-70b-versatile,openai/gpt-oss-120b,llama-3.1-8b-instant"
 
-    zerops_token: str = ""
-    zerops_provider: str = "simulated"  # simulated | zcli
+    # Not ZEROPS_-prefixed: Zerops rejects custom env vars with that prefix
+    # on its own services (confirmed against a real project-import — see
+    # ZcliProvider's docstring).
+    zcli_token: str = ""
+    pathfinder_provider: str = "simulated"  # simulated | zcli
     zeroth_public_url: str = "http://localhost:8000"
 
     max_repo_mb: int = 50

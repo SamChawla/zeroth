@@ -7,6 +7,6 @@ __all__ = ["DeployResult", "ZeropsProvider", "get_provider"]
 
 
 def get_provider() -> ZeropsProvider:
-    if settings.zerops_provider == "zcli" and settings.zerops_token:
+    if settings.pathfinder_provider == "zcli" and settings.zcli_token:
         return ZcliProvider()
     return SimulatedProvider()

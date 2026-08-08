@@ -62,7 +62,7 @@ zcli project project-import import.yaml
 ```bash
 pip install uv
 uv pip install --system -r requirements.txt
-cp .env.example .env          # ZEROPS_PROVIDER=simulated needs no credentials
+cp .env.example .env          # PATHFINDER_PROVIDER=simulated needs no credentials
 uvicorn zeroth.api.main:app --reload --port 8000
 python -m zeroth.worker.main  # second terminal
 python -m zeroth.scripts.seed_gallery  # optional: populate the showcase with sample runs
@@ -71,7 +71,7 @@ python -m http.server 5173 -d web
 
 The simulated provider runs the whole pipeline without provisioning anything,
 and deliberately fails its first attempt so the repair loop can be exercised
-offline. Switch `ZEROPS_PROVIDER=zcli` once credentials are in place.
+offline. Switch `PATHFINDER_PROVIDER=zcli` once credentials are in place.
 
 The web UI is three static pages: `index.html` is the showcase (completed
 runs, shown first), `run.html` starts a new run or replays a finished one via

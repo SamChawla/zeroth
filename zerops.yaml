@@ -45,3 +45,6 @@ zerops:
       deployFiles: web/~
     run:
       base: static
+      ports:
+        - port: 8080
+          httpSupport: true

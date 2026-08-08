@@ -28,11 +28,13 @@ zerops:
 {% endif %}
     run:
       base: {{ svc.type }}
-{% if svc.public and svc.port %}
+{% if svc.public %}
       ports:
-        - port: {{ svc.port }}
+        - port: {{ svc.port or (8080 if svc.type == 'static' else 8000) }}
           httpSupport: true
 {% endif %}
+{% if svc.type != 'static' %}
       start: {{ svc.start_command }}
+{% endif %}
 {% endif %}
 {% endfor %}

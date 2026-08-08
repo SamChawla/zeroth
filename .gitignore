@@ -1,0 +1,9 @@
+docs/ADR.md
+docs/PLAN.md
+
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+*.db

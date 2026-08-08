@@ -1,0 +1,49 @@
+# Stand up all of Zeroth in one command:
+#   zcli project project-import import.yaml
+project:
+  name: zeroth
+  tags:
+    - zeroth
+services:
+  - hostname: api
+    type: python@3.12
+    minContainers: 1
+    maxContainers: 4          # door-rush headroom: judges arriving at once
+    enableSubdomainAccess: true
+    buildFromGit: https://github.com/SamChawla/zeroth
+    zeropsSetup: api
+    envSecrets:
+      DATABASE_URL: ${db_connectionString}
+      VALKEY_URL: redis://${cache_hostname}:6379/0
+      EURI_API_KEY: ""
+      GROQ_API_KEY: ""
+      ZEROPS_TOKEN: ""
+      ZEROPS_PROVIDER: simulated
+
+  - hostname: worker
+    type: python@3.12
+    minContainers: 1
+    maxContainers: 3          # scales with concurrent pathfinder runs
+    buildFromGit: https://github.com/SamChawla/zeroth
+    zeropsSetup: worker
+    envSecrets:
+      DATABASE_URL: ${db_connectionString}
+      VALKEY_URL: redis://${cache_hostname}:6379/0
+      EURI_API_KEY: ""
+      GROQ_API_KEY: ""
+      ZEROPS_TOKEN: ""
+      ZEROPS_PROVIDER: simulated
+
+  - hostname: web
+    type: static
+    enableSubdomainAccess: true
+    buildFromGit: https://github.com/SamChawla/zeroth
+    zeropsSetup: web
+
+  - hostname: db
+    type: postgresql@16
+    mode: NON_HA
+
+  - hostname: cache
+    type: valkey@7.2
+    mode: NON_HA

@@ -1,0 +1,51 @@
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class JobCreate(BaseModel):
+    repo_url: str = Field(min_length=8, max_length=500)
+
+
+class ArtifactOut(BaseModel):
+    kind: str
+    filename: str
+    content: str
+
+    class Config:
+        from_attributes = True
+
+
+class RunOut(BaseModel):
+    attempt_no: int
+    status: str
+    phase: str
+    failure_class: str
+    failure_message: str
+    diagnosis: str
+    patch_summary: str
+    build_log: str
+    verification: dict | None
+    started_at: datetime
+    ended_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
+class JobOut(BaseModel):
+    id: str
+    repo_url: str
+    repo_name: str
+    status: str
+    stage_detail: str
+    fingerprint: dict | None
+    manifest: dict | None
+    error: str
+    created_at: datetime
+    finished_at: datetime | None
+    runs: list[RunOut] = []
+    artifacts: list[ArtifactOut] = []
+
+    class Config:
+        from_attributes = True

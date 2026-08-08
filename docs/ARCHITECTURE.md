@@ -1,0 +1,89 @@
+# Zeroth — architecture
+
+## Thesis
+
+Config generators are easy and mostly worthless: plausible YAML that does not
+boot is worse than no YAML. Zeroth's product is the **verification loop** —
+config is only returned once it has been deployed to a real ephemeral Zerops
+project and watched come up.
+
+## Pipeline
+
+```
+GitHub URL
+  ├─ safety      admission control: host allowlist, size preflight, private-IP refusal
+  ├─ ingest      shallow clone (--depth 1 --single-branch), size re-check
+  ├─ fingerprint DETERMINISTIC. facts + evidence. No source code leaves here.
+  ├─ analyze     model reasons over facts only → manifest JSON
+  ├─ validate    JSON Schema + semantic checks        ← FAILURE CLASS 1 (local, free)
+  ├─ generate    Jinja → import YAML + zerops.yaml, parsed before use
+  ├─ pathfinder  ephemeral project
+  │    ├─ create                                      ← FAILURE CLASS 2 (import rejected)
+  │    ├─ deploy + poll (circuit breaker)             ← FAILURE CLASS 3 (built, did not run)
+  │    ├─ logs + verify
+  │    ├─ on failure → diagnose → patch → retry (max 3)
+  │    └─ destroy (finally, always)
+  └─ emit        bundle + DEPLOYMENT.md with the full evidence and repair trail
+```
+
+## The three failure classes
+
+This is the technical spine, and the strongest thing to say to a judge.
+
+| Class | Caught at | Cost | Repair |
+|---|---|---|---|
+| Schema | Local validation | Milliseconds | Model corrects its own JSON |
+| Infrastructure | Project import | One API call | Model patches manifest |
+| Runtime | Build/verify | Full build cycle | Model reads logs, patches manifest |
+
+Catching each at the cheapest level available is what separates a tool from a
+demo. Note that class 1 needs no provisioning at all — the repair loop is
+demonstrable even with zero credits.
+
+## Deterministic first, model second
+
+`fingerprint.py` is a rules engine. It parses manifests, lockfiles,
+`docker-compose.yml`, `Dockerfile`, `.env.example`, `Procfile` and produces
+`Fact(key, value, evidence)` triples. Only facts reach the model.
+
+Consequences:
+- The model cannot hallucinate a dependency that isn't declared.
+- Every generated service answers *why?* with a filename.
+- Token cost is bounded regardless of repo size.
+- The analysis stage is unit-testable without an API key.
+
+## Templates render YAML, never the model
+
+The model emits JSON validated against a schema; Jinja renders the YAML; the
+generator parses its own output before returning it. This removes an entire
+failure class (indentation, quoting, invalid keys) and makes attempt-to-attempt
+diffs readable.
+
+## Zerops services
+
+| Service | Type | Why it cannot be removed |
+|---|---|---|
+| `web` | static | The demo surface. Judges open a URL, not a terminal. |
+| `api` | python@3.12 | Intake, SSE relay, bundle download |
+| `worker` | python@3.12 | Clone/analyze/deploy are minutes long; they cannot block HTTP |
+| `db` | postgresql@16 | Jobs, attempts, artifacts, gallery |
+| `cache` | valkey@7.2 | Queue, event fan-out, rate limit, concurrency cap |
+
+Only `web` and `api` are public; the rest is private network. Autoscaling is
+real, not staged: concurrent pathfinder runs fan out across worker replicas.
+
+## Transport abstraction
+
+`ZeropsProvider` is a Protocol. Implementations: `SimulatedProvider` (offline,
+deliberately fails attempt 1) and `ZcliProvider`. If the spike shows ZCP MCP is
+the better path, add a third implementation and change one factory line —
+nothing above the interface knows the difference.
+
+## Guards
+
+- Teardown in `finally` on every path, plus tagged projects for sweeping.
+- Circuit breaker: a deploy stuck past `DEPLOY_TIMEOUT_S` is terminated, never
+  left holding a worker slot.
+- Global concurrency cap and per-IP hourly limit in Valkey.
+- Repository code never executes on the worker.
+- No platform secrets in ephemeral project environments.

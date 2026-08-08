@@ -63,25 +63,38 @@
     </button>
   </aside>
 
-  <!-- Submit -->
-  <section id="console-panel" class="card p-6 md:p-8">
-    <h1 class="text-2xl font-semibold tracking-tight mb-2">Analyze a repository</h1>
-    <p class="text-fg2 mb-6 max-w-2xl">
-      Zeroth reads the repository and writes the Zerops configuration. Nothing is deployed
-      until you ask for it.
-    </p>
-    <form id="run-form" class="field flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 max-w-2xl">
-      <span class="material-symbols-outlined text-fg3 ml-2.5 hidden sm:block text-[20px]">link</span>
-      <label for="repo" class="sr-only">Repository URL</label>
-      <input id="repo" type="url" required
-             class="bg-transparent border-none focus:ring-0 w-full font-mono text-sm py-2.5 px-3 text-fg"
-             placeholder="https://github.com/owner/repository" autocomplete="off" spellcheck="false"/>
-      <button id="go" type="submit" class="btn btn-primary sm:w-auto w-full">
-        Analyze <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
-      </button>
-    </form>
-    <p class="text-sm text-fg2 mt-4">Public GitHub or GitLab, up to 50&nbsp;MB. Nothing from the repository executes during analysis.</p>
-    <p class="text-sm text-danger mt-2 hidden" id="err" role="alert"></p>
+  <!-- Submit. Same weight as the landing hero: this is the product's one
+       interaction, and it should not read as a form buried in a console. -->
+  <section id="console-panel" class="card p-8 md:p-12">
+    <div class="max-w-3xl mx-auto text-center">
+      <p class="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent mb-4">Repository analysis</p>
+      <h1 class="text-3xl md:text-[2.5rem] md:leading-[1.1] font-semibold tracking-tight mb-4">
+        From repository to <span class="text-accent">verified deployment.</span>
+      </h1>
+      <p class="text-lg text-fg2 mb-8">
+        Zeroth reads the repository, decides whether it can deploy on Zerops, and writes the
+        configuration. Nothing is deployed until you ask for it.
+      </p>
+
+      <form id="run-form" class="field flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 text-left">
+        <span class="material-symbols-outlined text-fg3 ml-2.5 hidden sm:block text-[20px]">link</span>
+        <label for="repo" class="sr-only">Repository URL</label>
+        <input id="repo" type="url" required
+               class="bg-transparent border-none focus:ring-0 w-full font-mono text-sm py-2.5 px-3 text-fg"
+               placeholder="https://github.com/owner/repository" autocomplete="off" spellcheck="false"/>
+        <button id="go" type="submit" class="btn btn-primary sm:w-auto w-full">
+          Analyze <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        </button>
+      </form>
+      <p class="text-sm text-danger mt-3 hidden" id="err" role="alert"></p>
+
+      <ul class="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-sm text-fg2">
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Public GitHub / GitLab</li>
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Up to 50&nbsp;MB</li>
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Isolated deployment</li>
+        <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Nothing executes during analysis</li>
+      </ul>
+    </div>
   </section>
 
   <!-- The empty state used to be an input and a lot of nothing. Real previous

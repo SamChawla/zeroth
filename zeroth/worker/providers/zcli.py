@@ -148,6 +148,14 @@ class ZcliProvider:
         raise ZcliError(f"created project '{name}' but could not find its id in `zcli project list`")
 
     def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str) -> DeployResult:
+        # A repository may already ship its own Zerops config, and zcli picks
+        # zerops.yaml over the zerops.yml we write - so ours was silently
+        # ignored and the deploy ran against theirs, failing with "setup <name>
+        # was not found". Confirmed against a real repository whose own file
+        # declared prod/dev setups. Clear both spellings before writing, so the
+        # configuration being verified is unambiguously the generated one.
+        for existing in ("zerops.yml", "zerops.yaml"):
+            (repo_dir / existing).unlink(missing_ok=True)
         (repo_dir / ZEROPS_YAML_FILENAME).write_text(zerops_yaml, encoding="utf-8")
 
         setups = [svc["setup"] for svc in (yaml.safe_load(zerops_yaml).get("zerops") or [])]

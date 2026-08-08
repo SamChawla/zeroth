@@ -140,6 +140,7 @@ def assess(fp) -> Compatibility:
     _check_port(findings, facts)
     _check_backing_services(findings, facts)
     _check_containerisation(findings, present)
+    _check_existing_config(findings, present)
 
     report = _verdict(findings, base, facts)
     report.fix_prompt = build_fix_prompt(report, facts)
@@ -230,6 +231,27 @@ def _check_backing_services(findings, facts) -> None:
                 f"{', '.join(declared)} — wired through an environment variable, which is "
                 "what Zerops provides.",
             ))
+
+
+def _check_existing_config(findings, present) -> None:
+    """A repository that already has Zerops config is already Zerops-ready.
+
+    Saying so is more useful than quietly generating a second configuration and
+    presenting it as the answer - and it explains why a verification run
+    deliberately replaces their file with the generated one rather than
+    deploying whatever setups they happened to define.
+    """
+    found = present & {"zerops.yaml", "zerops.yml"}
+    if not found:
+        return
+    findings.append(Finding(
+        "note",
+        "This repository already has Zerops configuration",
+        f"{', '.join(sorted(found))} is already present, so this repository is set up for "
+        "Zerops. The configuration below is generated independently from what the code "
+        "declares; a verification run uses the generated one, not the file in the repository.",
+        ", ".join(sorted(found)),
+    ))
 
 
 def _check_containerisation(findings, present) -> None:

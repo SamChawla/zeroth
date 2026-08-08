@@ -55,8 +55,23 @@
 
 <main id="main" class="flex-grow pt-14">
 
+  <!-- Top of the page, same as the run screen. Not built yet, and labelled as
+       such: a disabled control is honest, a working-looking one is not. -->
+  <section class="max-w-content mx-auto px-5 md:px-8 pt-8">
+    <div class="card p-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <span class="pill pill-running">Coming soon</span>
+      <p class="text-sm text-fg2 flex-grow min-w-[16rem]">
+        <span class="text-fg font-medium">Private repositories.</span>
+        Analyse a private repo, or keep the whole run out of the public showcase.
+      </p>
+      <button type="button" class="btn btn-secondary" disabled title="Not available yet">
+        <span class="material-symbols-outlined text-[18px]">lock</span> Analyze a private repo
+      </button>
+    </div>
+  </section>
+
   <!-- Hero. The repository input is the product, so it gets the visual weight. -->
-  <section class="max-w-content mx-auto px-5 md:px-8 pt-16 md:pt-24 pb-14">
+  <section class="max-w-content mx-auto px-5 md:px-8 pt-10 md:pt-14 pb-14">
     <div class="max-w-3xl mx-auto text-center">
       <p class="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent mb-5">Verified deployments for Zerops</p>
       <h1 class="text-4xl md:text-[3.25rem] md:leading-[1.08] font-semibold tracking-tight mb-5">
@@ -88,20 +103,7 @@
     </div>
   </section>
 
-  <section class="max-w-content mx-auto px-5 md:px-8 pb-8 -mt-6">
-    <div class="card p-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <span class="pill pill-running">Coming soon</span>
-      <p class="text-sm text-fg2 flex-grow min-w-[16rem]">
-        <span class="text-fg font-medium">Private repositories.</span>
-        Analyse a private repo, or keep the whole run out of the public showcase.
-      </p>
-      <button type="button" class="btn btn-secondary" disabled title="Not available yet">
-        <span class="material-symbols-outlined text-[18px]">lock</span> Analyze a private repo
-      </button>
-    </div>
-  </section>
-
-  <!-- Workflow. Steps 1-3 always run; 4-5 only when the user asks for them. -->
+<!-- Workflow. Steps 1-3 always run; 4-5 only when the user asks for them. -->
   <section class="max-w-content mx-auto px-5 md:px-8 pb-20">
     <div class="card p-6 md:p-8">
       <div class="grid grid-cols-1 md:grid-cols-5 gap-5 md:gap-3">

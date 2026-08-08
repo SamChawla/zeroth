@@ -21,15 +21,13 @@ zerops:
       base: python@3.12
       os: ubuntu
       buildCommands:
-        - pip install uv
-        - uv pip install --system -r requirements.txt
+        - pip install -r requirements.txt
       deployFiles: ./
     run:
       base: python@3.12
       prepareCommands:
         - apt-get update && apt-get install -y git
-        - pip install uv
-        - uv pip install --system -r requirements.txt
+        - pip install -r requirements.txt
       start: python -m zeroth.worker.main
 
   # "static" as a Zerops run base is under-documented and 502'd with zero

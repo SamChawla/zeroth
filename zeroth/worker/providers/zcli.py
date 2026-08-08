@@ -4,12 +4,31 @@ Shelling out to zcli is deliberate: it is the interface Zerops documents and
 keeps stable, and it avoids hand-rolling auth and polling against the REST API
 under a 48-hour clock.
 
-SPIKE-DEPENDENT. Confirm these against your account before enabling:
-  1. Does project-import accept a generated file and return a usable id?
-  2. Does the import build directly from git, or must we push a working copy?
-  3. How does a failing build surface in `zcli service log`?
-  4. Does `zcli project delete` free quota immediately?
-Fill in the command shapes below once the spike answers them.
+Flag names below are confirmed against `zcli <cmd> --help` (zcli 1.1.0,
+2026-08-08): project/service identifiers are `-P/--project-id` and
+`-S/--service-id` — NOT the `--projectId`/`--serviceId` this file guessed
+before that check. `project project-import` and `project delete` both take
+the id as a bare positional argument too; the flag form is used here for
+readability.
+
+STILL SPIKE-DEPENDENT — confirmed command shapes are not the same as
+confirmed behavior. Run a real `project-import` before trusting this:
+  1. What does `project project-import` print on success, and does the id
+     regex below actually match it? (`create_project` — unverified guess.)
+  2. `buildFromGit` is a project-import YAML field, which strongly implies
+     Zerops clones and builds server-side once the project is created —
+     meaning `deploy()` doesn't need a `service push`/`deploy` step, only
+     polling. Not yet watched end-to-end.
+  3. `service log` needs `-S/--service-id` to mean anything once a project
+     has more than one service — ours always will (api/worker/web/db/cache).
+     `logs()`/`deploy()` below only look at the whole project; they need a
+     hostname→service-id map from `service list` output, which is still
+     unread.
+  4. Does `service list` output actually contain the literal strings
+     "failed"/"error"/"active"/"running" this file greps for?
+  5. Where does the live subdomain URL surface — `service list`, `project
+     env`, something else?
+  6. Does `project delete --confirm` free quota immediately?
 """
 import re
 import subprocess
@@ -26,16 +45,38 @@ class ZcliError(Exception):
 
 
 class ZcliProvider:
+    """
+    Confirmed 2026-08-08: zcli has no ZEROPS_TOKEN env-var auth. `zcli login
+    <token>` makes an authenticated call and persists the session to a local
+    config file (cli.data) — that's the only way in. The old `_run()` passed
+    ZEROPS_TOKEN as a subprocess env var, which zcli never read, AND replaced
+    the entire environment (dropping HOME/PATH/etc, breaking zcli's ability to
+    find its own config dir). Fixed: `_ensure_login()` runs the real login
+    command once per process, and `_run()` no longer touches the environment.
+    """
+
     name = "zcli"
 
-    def _run(self, args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["zcli", *args],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env={"ZEROPS_TOKEN": settings.zerops_token, "PATH": "/usr/local/bin:/usr/bin:/bin"},
+    def __init__(self) -> None:
+        self._logged_in = False
+
+    def _ensure_login(self) -> None:
+        if self._logged_in:
+            return
+        proc = subprocess.run(
+            ["zcli", "login", settings.zerops_token],
+            capture_output=True, text=True, timeout=30,
         )
+        if proc.returncode != 0:
+            raise ZcliError(
+                "zcli login failed — check ZEROPS_TOKEN: "
+                + (proc.stderr.strip() or proc.stdout.strip())[:300]
+            )
+        self._logged_in = True
+
+    def _run(self, args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
+        self._ensure_login()
+        return subprocess.run(["zcli", *args], capture_output=True, text=True, timeout=timeout)
 
     def create_project(self, import_yaml: str, project_name: str) -> str:
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
@@ -60,7 +101,7 @@ class ZcliProvider:
         """
         deadline = time.time() + settings.deploy_timeout_s
         while time.time() < deadline:
-            proc = self._run(["service", "list", "--projectId", project_id], timeout=30)
+            proc = self._run(["service", "list", "--project-id", project_id], timeout=30)
             output = proc.stdout.lower()
             if "failed" in output or "error" in output:
                 logs = self.logs(project_id)
@@ -83,9 +124,9 @@ class ZcliProvider:
         )
 
     def logs(self, project_id: str, service: str = "") -> str:
-        args = ["service", "log", "--projectId", project_id, "--limit", "200"]
+        args = ["service", "log", "--project-id", project_id, "--limit", "200"]
         if service:
-            args += ["--serviceId", service]
+            args += ["--service-id", service]
         try:
             proc = self._run(args, timeout=45)
             return (proc.stdout or proc.stderr)[-8000:]
@@ -97,7 +138,7 @@ class ZcliProvider:
 
     def destroy(self, project_id: str) -> None:
         try:
-            self._run(["project", "delete", "--projectId", project_id, "--confirm"], timeout=90)
+            self._run(["project", "delete", "--project-id", project_id, "--confirm"], timeout=90)
         except Exception:  # noqa: BLE001 - teardown must never raise
             pass
 

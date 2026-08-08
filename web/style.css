@@ -209,6 +209,11 @@ body, .card, .nav, .surface-panel {
   flex: none;
 }
 
+/* is-core marks a step that always runs; is-active marks one running now. Both
+   are indigo, because both are Zeroth doing something. is-done is green and is
+   therefore only ever correct once a step has actually completed on a real run
+   - never as decoration on a static page, where nothing has been proved yet. */
+.step.is-core .step-icon   { background: rgb(var(--accent) / 0.12); color: rgb(var(--accent)); border-color: rgb(var(--accent) / 0.35); }
 .step.is-active .step-icon { background: rgb(var(--accent) / 0.12); color: rgb(var(--accent)); border-color: rgb(var(--accent) / 0.35); }
 .step.is-done .step-icon   { background: rgb(var(--success) / 0.12); color: rgb(var(--success)); border-color: rgb(var(--success) / 0.3); }
 

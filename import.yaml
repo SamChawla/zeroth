@@ -35,7 +35,8 @@ services:
       PATHFINDER_PROVIDER: simulated
 
   - hostname: web
-    type: static
+    # Not `type: static` - see zerops.yaml's comment on the web setup for why.
+    type: python@3.12
     enableSubdomainAccess: true
     buildFromGit: https://github.com/SamChawla/zeroth
     zeropsSetup: web

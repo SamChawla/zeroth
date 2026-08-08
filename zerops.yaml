@@ -38,13 +38,19 @@ zerops:
         - uv pip install --system -r requirements.txt
       start: python -m zeroth.worker.main
 
+  # "static" as a Zerops run base is under-documented and 502'd with zero
+  # logs across several tries (port, deployFiles syntax) - sidestepping it
+  # with the same python@3.12 + http.server pattern already confirmed by
+  # local dev (see README), rather than guess further against undocumented
+  # platform internals.
   - setup: web
     build:
-      base: nodejs@latest
+      base: python@3.12
       os: alpine
-      deployFiles: ./web
+      deployFiles: ./
     run:
-      base: static
+      base: python@3.12
       ports:
         - port: 8080
           httpSupport: true
+      start: python -m http.server 8080 -d web

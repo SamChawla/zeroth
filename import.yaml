@@ -14,7 +14,10 @@ services:
     zeropsSetup: api
     envSecrets:
       DATABASE_URL: ${db_connectionString}
-      VALKEY_URL: redis://${cache_hostname}:6379/0
+      # Zerops' Valkey requires auth — cache_hostname alone yields
+      # "AuthenticationError: Authentication required". connectionString
+      # carries the credentials.
+      VALKEY_URL: ${cache_connectionString}
       EURI_API_KEY: ""
       GROQ_API_KEY: ""
       ZCLI_TOKEN: ""
@@ -28,7 +31,10 @@ services:
     zeropsSetup: worker
     envSecrets:
       DATABASE_URL: ${db_connectionString}
-      VALKEY_URL: redis://${cache_hostname}:6379/0
+      # Zerops' Valkey requires auth — cache_hostname alone yields
+      # "AuthenticationError: Authentication required". connectionString
+      # carries the credentials.
+      VALKEY_URL: ${cache_connectionString}
       EURI_API_KEY: ""
       GROQ_API_KEY: ""
       ZCLI_TOKEN: ""

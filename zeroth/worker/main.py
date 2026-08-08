@@ -77,8 +77,21 @@ def process_analyze(job_id: str) -> None:
         bus.publish(job.id, "manifest", {"manifest": manifest})
 
         _set_status(db, job, "generating", "Writing Zerops configuration")
+        # A repository that already deploys to Zerops is better evidence than
+        # anything generated, so keep its file rather than discarding it.
+        own = _repo_config(repo_dir)
+        if own:
+            _save(db, job, "repo_zerops_yaml", "zerops.yaml (from repository)", own)
+        # Their zerops.yaml describes setups against THEIR services, so it only
+        # makes sense alongside their import.yaml. Verifying one without the
+        # other deploys setup names into a project that has no such services.
+        own_import = _repo_import(repo_dir)
+        if own_import:
+            _save(db, job, "repo_import_yaml", "import.yaml (from repository)", own_import)
+
+        framework = (job.fingerprint or {}).get("framework") or ""
         import_yaml = render_import_yaml(manifest, job.repo_url)
-        zerops_yaml = render_zerops_yaml(manifest, job.repo_url)
+        zerops_yaml = render_zerops_yaml(manifest, job.repo_url, framework)
         _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
         _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
         bus.publish(job.id, "config", {
@@ -90,6 +103,7 @@ def process_analyze(job_id: str) -> None:
         _set_status(db, job, "ready", "Configuration ready — review it, then try it out.")
         bus.publish(job.id, "ready", {
             "verifiable": settings.pathfinder_provider != "off",
+            "has_own_config": bool(own),
         })
 
     except (RepoRejected, Exception) as exc:  # noqa: BLE001
@@ -138,11 +152,17 @@ def process_verify(job_id: str, target: str) -> None:
         repo_dir = ingest.clone(clone_url)
 
         provider = get_provider(token=token)
+        use_repo = job.config_source == "repository"
+        override = _artifact(db, job, "repo_zerops_yaml") if use_repo else ""
+        import_override = _artifact(db, job, "repo_import_yaml") if use_repo else ""
         result = pathfinder.run(
             job.id, job.repo_url, repo_dir, job.manifest,
             lambda ev, payload: bus.publish(job.id, ev, payload),
             provider=provider,
             keep_project=(target == "account"),
+            zerops_yaml_override=override,
+            import_yaml_override=import_override,
+            framework=(job.fingerprint or {}).get("framework") or "",
         )
 
         manifest = result.manifest
@@ -190,6 +210,29 @@ def process_verify(job_id: str, target: str) -> None:
             if close:
                 close()
         db.close()
+
+
+def _repo_import(repo_dir) -> str:
+    """The repository's own project import, if it ships one."""
+    for name in ("import.yaml", "import.yml", "zerops-project-import.yaml"):
+        path = repo_dir / name
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+    return ""
+
+
+def _repo_config(repo_dir) -> str:
+    """The repository's own zerops config, if it ships one."""
+    for name in ("zerops.yaml", "zerops.yml"):
+        path = repo_dir / name
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+    return ""
+
+
+def _artifact(db, job: Job, kind: str) -> str:
+    row = db.query(Artifact).filter_by(job_id=job.id, kind=kind).first()
+    return row.content if row else ""
 
 
 def _target_phrase(target: str) -> str:

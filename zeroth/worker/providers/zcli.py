@@ -131,7 +131,10 @@ class ZcliProvider:
             Path(path).unlink(missing_ok=True)
 
         if proc.returncode != 0:
-            raise ZcliError(f"import failed: {proc.stderr.strip() or proc.stdout.strip()}")
+            # Both streams: zcli narrates progress on stdout and puts the
+            # actual cause on stderr, and reading only one loses half the story.
+            raise ZcliError(self._scrub(
+                "import failed: " + "\n".join(x for x in (proc.stdout.strip(), proc.stderr.strip()) if x)))
 
         return self._find_project_id(actual_name)
 
@@ -147,7 +150,8 @@ class ZcliProvider:
                 return cells[0]
         raise ZcliError(f"created project '{name}' but could not find its id in `zcli project list`")
 
-    def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str) -> DeployResult:
+    def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str,
+               targets: list[tuple[str, str]] | None = None) -> DeployResult:
         # A repository may already ship its own Zerops config, and zcli picks
         # zerops.yaml over the zerops.yml we write - so ours was silently
         # ignored and the deploy ran against theirs, failing with "setup <name>
@@ -165,26 +169,34 @@ class ZcliProvider:
                 error="zerops.yml has no setups to deploy",
             )
 
+        # A setup name is not a service name. Generated configuration happens to
+        # use one name for both, but a repository writing its own config usually
+        # does not - tlak declares setups prod/dev against services tlak/db, and
+        # deploying "prod" as though it were a service fails with
+        # "Service [prod] not found". Callers that know the real mapping pass it.
+        if not targets:
+            targets = [(setup, setup) for setup in setups]
+
         log_chunks = []
-        for setup in setups:
+        for service, setup in targets:
             proc = self._run(
-                ["service", "deploy", setup, "-P", project_id, "--setup", setup,
+                ["service", "deploy", service, "-P", project_id, "--setup", setup,
                  "--working-dir", str(repo_dir)],
                 timeout=settings.deploy_timeout_s,
             )
-            log_chunks.append(f"--- {setup} ---\n{proc.stdout}\n{proc.stderr}")
+            log_chunks.append(f"--- {service} (setup: {setup}) ---\n{proc.stdout}\n{proc.stderr}")
             if proc.returncode != 0:
                 combined = self._scrub("\n".join(log_chunks))
                 return DeployResult(
                     ok=False, phase="runtime", project_id=project_id,
                     logs=combined[-8000:],
                     error=self._scrub(
-                        _first_error(proc.stdout + proc.stderr) or f"{setup} deploy failed"
+                        _first_error(proc.stdout + proc.stderr) or f"{service} deploy failed"
                     ),
                 )
 
         combined = self._scrub("\n".join(log_chunks))
-        url = self._public_url(project_id, setups)
+        url = self._public_url(project_id, [svc for svc, _ in targets])
         return DeployResult(
             ok=True, phase="runtime", project_id=project_id,
             logs=combined[-8000:], url=url,

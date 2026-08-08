@@ -119,6 +119,7 @@ def verify_job(
     job.status = "queued"
     job.stage_detail = "Queued for verification"
     job.verify_target = body.target
+    job.config_source = body.config_source
     job.error = ""
     db.commit()
     bus.enqueue(job.id, task="verify", target=body.target)

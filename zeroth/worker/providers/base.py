@@ -26,7 +26,8 @@ class ZeropsProvider(Protocol):
     def create_project(self, import_yaml: str, project_name: str) -> str:
         """Provision from Import YAML. Returns a project id."""
 
-    def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str) -> DeployResult:
+    def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str,
+               targets: list[tuple[str, str]] | None = None) -> DeployResult:
         """Build and deploy the application from a local working copy.
 
         Confirmed 2026-08-08 against a real project: Import YAML's

@@ -55,6 +55,9 @@ class Job(Base):
     # Which transport actually ran. "simulated" provisions nothing, so a pass
     # from it is NOT a deployment and must never be presented as one.
     provider: Mapped[str] = mapped_column(String(30), default="")
+    # "repository" when the repo shipped its own zerops.yaml and we verified
+    # that, "generated" when we verified ours.
+    config_source: Mapped[str] = mapped_column(String(20), default="generated")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     live_url: Mapped[str] = mapped_column(String(500), default="")
     # Only set for target="account": that project is deliberately NOT torn down,

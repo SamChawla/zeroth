@@ -320,6 +320,34 @@
         </label>
       </div>
 
+      <!-- Only shown when the repository ships its own config. Verifying what a
+           repository already claims is stronger evidence than verifying ours. -->
+      <div id="config-source-row" class="hidden flex-col gap-2">
+        <span class="text-sm font-medium">Which configuration to deploy</span>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label class="choice cursor-pointer relative block">
+            <input type="radio" name="config-source" value="repository" checked/>
+            <div class="choice-body">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="font-medium text-sm">The repository's own</span>
+                <span class="pill pill-verified">Recommended</span>
+              </div>
+              <p class="text-sm text-fg2">This repository already ships a zerops.yaml. Deploying it unchanged tests what the repository actually claims.</p>
+            </div>
+          </label>
+          <label class="choice cursor-pointer relative block">
+            <input type="radio" name="config-source" value="generated"/>
+            <div class="choice-body">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="font-medium text-sm">The generated one</span>
+                <span class="pill pill-idle">Zeroth's</span>
+              </div>
+              <p class="text-sm text-fg2">Deploy the configuration shown below instead, to see how it compares.</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <div id="token-row" class="hidden flex-col gap-2">
         <label for="zerops-token" class="text-sm font-medium">Zerops personal access token</label>
         <input id="zerops-token" type="password" autocomplete="off" spellcheck="false"

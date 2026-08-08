@@ -22,6 +22,9 @@ class VerifyRequest(BaseModel):
     # chosen to deploy regardless. The deployability check exists to stop us
     # spending minutes and credits proving a failure it already predicted.
     acknowledge: bool = False
+    # "repository" verifies the zerops.yaml already in the repo. A repo that
+    # ships working config is better evidence than one we wrote.
+    config_source: Literal["generated", "repository"] = "generated"
 
 
 class ArtifactOut(BaseModel):
@@ -64,6 +67,7 @@ class JobOut(BaseModel):
     finished_at: datetime | None
     verify_target: str = ""
     provider: str = ""
+    config_source: str = "generated"
     verified: bool = False
     live_url: str = ""
     kept_project_id: str = ""

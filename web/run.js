@@ -4,6 +4,7 @@ let startTime = null;
 let elapsedTimer = null;
 let runProvider = "";
 let compatReport = null;
+let hasOwnConfig = false;
 
 /* ---------- terminal ---------- */
 
@@ -128,6 +129,8 @@ function resetRun() {
   hide("tryout");
   hide("tryout-err");
   hide("tryout-verdict");
+  hide("config-source-row");
+  hasOwnConfig = false;
   hide("compat");
   hide("fixprompt");
   compatReport = null;
@@ -238,6 +241,7 @@ function handle(msg, jobId) {
         "Nothing has been provisioned. Start a verification to prove this configuration boots.";
       logLine("[ready] configuration generated — nothing deployed", "text-indigo-300");
       $("live-dot").className = "dot bg-accent";
+      hasOwnConfig = !!msg.has_own_config;
       if (msg.verifiable !== false) showTryout();
       break;
     case "verify_rejected":
@@ -542,7 +546,11 @@ function showTryout() {
   } else {
     btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">play_arrow</span> Try it out';
     hide("tryout-verdict");
+  hide("config-source-row");
+  hasOwnConfig = false;
   }
+  $("config-source-row").classList.toggle("hidden", !hasOwnConfig);
+  $("config-source-row").classList.toggle("flex", hasOwnConfig);
   show("tryout");
 }
 
@@ -551,6 +559,12 @@ function tryoutError(message) {
   el.textContent = message;
   show("tryout-err");
   $("tryout-go").disabled = false;
+}
+
+function selectedConfigSource() {
+  if (!hasOwnConfig) return "generated";
+  const picked = document.querySelector('input[name="config-source"]:checked');
+  return picked ? picked.value : "repository";
 }
 
 function selectedTarget() {
@@ -577,6 +591,7 @@ async function requestVerify() {
         target,
         token: target === "account" ? token : null,
         acknowledge: (compatReport && compatReport.verdict) === "needs_changes",
+        config_source: selectedConfigSource(),
       }),
     });
     if (!res.ok) {
@@ -681,6 +696,7 @@ function hydrate(job) {
   }
 
   const artifact = (kind) => (job.artifacts || []).find((a) => a.kind === kind);
+  hasOwnConfig = !!artifact("repo_zerops_yaml");
   const importYaml = artifact("import_yaml");
   const zeropsYaml = artifact("zerops_yaml");
   if (importYaml) $("import-yaml").textContent = importYaml.content;

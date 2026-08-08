@@ -10,6 +10,8 @@ Failure is classified into three levels:
   runtime        it built but did not come up
 """
 import time
+
+import yaml
 from dataclasses import dataclass, field
 
 from zeroth.config import settings
@@ -41,6 +43,41 @@ class PathfinderResult:
     project_id: str = ""
 
 
+def _deploy_targets(import_yaml: str, zerops_yaml: str) -> list[tuple[str, str]]:
+    """Which service gets deployed with which setup.
+
+    Managed services (databases, caches) are provisioned by the import and have
+    nothing to deploy, so only runtimes are returned. A service names its setup
+    via zeropsSetup; without one, the convention is a setup matching the service
+    hostname, falling back to the only setup defined.
+    """
+    try:
+        services = (yaml.safe_load(import_yaml) or {}).get("services") or []
+        setups = [s["setup"] for s in ((yaml.safe_load(zerops_yaml) or {}).get("zerops") or [])]
+    except yaml.YAMLError:
+        return []
+    if not setups:
+        return []
+
+    targets = []
+    for svc in services:
+        # A managed service's type carries a colon (postgresql:single@17) or is
+        # a known managed family; those are created, never deployed to.
+        stype = str(svc.get("type") or "")
+        if ":" in stype or stype.split("@")[0] in {
+            "postgresql", "mariadb", "valkey", "keydb", "kafka", "nats",
+            "elasticsearch", "meilisearch", "qdrant", "typesense", "clickhouse",
+            "object-storage", "shared-storage",
+        }:
+            continue
+        host = svc.get("hostname")
+        if not host:
+            continue
+        setup = svc.get("zeropsSetup") or (host if host in setups else setups[0])
+        targets.append((host, setup))
+    return targets
+
+
 def run(
     job_id: str,
     repo_url: str,
@@ -49,6 +86,9 @@ def run(
     on_event,
     provider=None,
     keep_project: bool = False,
+    zerops_yaml_override: str = "",
+    import_yaml_override: str = "",
+    framework: str = "",
 ) -> PathfinderResult:
     """Deploy the manifest, repairing on failure.
 
@@ -72,8 +112,11 @@ def run(
         started = time.time()
 
         try:
-            import_yaml = render_import_yaml(current, repo_url)
-            zerops_yaml = render_zerops_yaml(current, repo_url)
+            import_yaml = import_yaml_override or render_import_yaml(current, repo_url)
+            # Verifying the repository's own configuration means deploying it
+            # unchanged - patching it would prove something the repository does
+            # not actually claim.
+            zerops_yaml = zerops_yaml_override or render_zerops_yaml(current, repo_url, framework)
 
             on_event("stage", {"stage": "provisioning", "attempt": attempt_no})
             project_name = f"zeroth-{job_id[:8]}-{attempt_no}"
@@ -81,7 +124,10 @@ def run(
 
             on_event("stage", {"stage": "deploying", "attempt": attempt_no,
                                "project_id": project_id})
-            result = provider.deploy(project_id, repo_dir, zerops_yaml)
+            result = provider.deploy(
+                project_id, repo_dir, zerops_yaml,
+                targets=_deploy_targets(import_yaml, zerops_yaml),
+            )
 
             if result.ok:
                 live_url = result.url
@@ -138,7 +184,9 @@ def run(
         except Exception as exc:  # noqa: BLE001
             attempts.append(Attempt(
                 attempt_no=attempt_no, status="failed", phase="infrastructure",
-                failure_class="infrastructure", failure_message=str(exc)[:800],
+                # zcli narrates the whole import before failing, so the useful
+                # line is at the end of a long message. 800 chars cut it off.
+                failure_class="infrastructure", failure_message=str(exc)[-4000:],
                 project_id=project_id,
             ))
             on_event("attempt_failed", {

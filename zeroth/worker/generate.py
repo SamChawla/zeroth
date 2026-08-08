@@ -11,6 +11,8 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from zeroth.config import settings
+from zeroth.worker.constraints import check as check_constraints
+from zeroth.worker.recipes import for_service
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -43,12 +45,25 @@ SERVICE_DEFAULTS = {
 }
 
 
-def _with_defaults(manifest: dict) -> dict:
+def _with_defaults(manifest: dict, framework: str = "", prefer_recipe_start: bool = False) -> dict:
     filled = dict(manifest)
     filled.setdefault("summary", "")
-    filled["services"] = [
-        {**SERVICE_DEFAULTS, **service} for service in (manifest.get("services") or [])
-    ]
+    services = []
+    for service in manifest.get("services") or []:
+        svc = {**SERVICE_DEFAULTS, **service}
+        # The recipe carries how this stack builds and starts on Zerops. It is
+        # attached per service so the template never has to infer it.
+        recipe = for_service(svc.get("type", ""), framework)
+        svc["recipe"] = recipe
+        # The model read the repository, so normally its start command wins.
+        # But a recipe start encodes how the platform requires this framework to
+        # be launched - Next.js standalone will not bind an interface the load
+        # balancer can reach without it - and on that point the recipe is right
+        # and the model is guessing.
+        if prefer_recipe_start and recipe.start:
+            svc["start_command"] = recipe.start
+        services.append(svc)
+    filled["services"] = services
     return filled
 
 
@@ -61,11 +76,28 @@ def render_import_yaml(manifest: dict, repo_url: str, verified: bool = False) ->
     return text
 
 
-def render_zerops_yaml(manifest: dict, repo_url: str) -> str:
+def render_zerops_yaml(manifest: dict, repo_url: str, framework: str = "") -> str:
     text = _env.get_template("zerops.yaml.j2").render(
-        manifest=_with_defaults(manifest), repo_url=repo_url
+        manifest=_with_defaults(manifest, framework), repo_url=repo_url
     )
     _assert_parses(text, "zerops.yaml")
+    # Platform rules are checkable here, for free. Letting a known violation
+    # through only to discover it after a full build cycle is the expensive way
+    # to learn something already written down.
+    violations = check_constraints(text)
+    if violations:
+        # Retry with the recipe's own start command before giving up: the usual
+        # cause is the model proposing a launch that ignores a platform rule the
+        # recipe already encodes. Free to attempt, and it fixes the common case.
+        text = _env.get_template("zerops.yaml.j2").render(
+            manifest=_with_defaults(manifest, framework, prefer_recipe_start=True),
+            repo_url=repo_url,
+        )
+        _assert_parses(text, "zerops.yaml")
+        violations = check_constraints(text)
+    if violations:
+        raise GenerationError(
+            "generated zerops.yaml violates platform constraints: " + "; ".join(violations))
     return text
 
 

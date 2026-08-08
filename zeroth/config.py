@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     euri_model: str = "gpt-4.1-mini"
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Ordered fallback chain, tried in sequence — each model has its own
+    # max-completion-tokens ceiling (see llm.GROQ_MODEL_LIMITS), so a request
+    # too large for one can still succeed against the next.
+    groq_models: str = "llama-3.3-70b-versatile,openai/gpt-oss-120b,llama-3.1-8b-instant"
 
     zerops_token: str = ""
     zerops_provider: str = "simulated"  # simulated | zcli

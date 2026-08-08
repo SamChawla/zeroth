@@ -3,6 +3,7 @@ zerops:
   - setup: api
     build:
       base: python@3.12
+      os: alpine
       buildCommands:
         - pip install uv
         - uv pip install --system -r requirements.txt
@@ -22,6 +23,7 @@ zerops:
   - setup: worker
     build:
       base: python@3.12
+      os: alpine
       buildCommands:
         - pip install uv
         - uv pip install --system -r requirements.txt
@@ -38,7 +40,8 @@ zerops:
 
   - setup: web
     build:
-      base: static
+      base: nodejs@latest
+      os: alpine
       deployFiles: web/~
     run:
       base: static

@@ -38,13 +38,30 @@ class PathfinderResult:
     manifest: dict
     attempts: list[Attempt]
     live_url: str = ""
+    project_id: str = ""
 
 
-def run(job_id: str, repo_url: str, repo_dir, manifest: dict, on_event) -> PathfinderResult:
-    provider = get_provider()
+def run(
+    job_id: str,
+    repo_url: str,
+    repo_dir,
+    manifest: dict,
+    on_event,
+    provider=None,
+    keep_project: bool = False,
+) -> PathfinderResult:
+    """Deploy the manifest, repairing on failure.
+
+    keep_project applies to the SUCCEEDING attempt only: when the run is
+    targeting the user's own account they want what worked left standing.
+    Failed attempts are always torn down - abandoning half-built projects in
+    somebody's account would be worse than not offering the option at all.
+    """
+    provider = provider or get_provider()
     attempts: list[Attempt] = []
     current = manifest
     live_url = ""
+    kept_project_id = ""
 
     for attempt_no in range(1, settings.max_attempts + 1):
         on_event(
@@ -77,8 +94,13 @@ def run(job_id: str, repo_url: str, repo_dir, manifest: dict, on_event) -> Pathf
                     "attempt": attempt_no,
                     "elapsed": round(time.time() - started, 1),
                     "verification": result.verification,
+                    "url": live_url,
                 })
-                return PathfinderResult(True, current, attempts, live_url)
+                if keep_project:
+                    kept_project_id = project_id
+                    project_id = ""  # suppress the teardown in `finally`
+                    on_event("kept", {"project_id": kept_project_id, "url": live_url})
+                return PathfinderResult(True, current, attempts, live_url, kept_project_id)
 
             failure_class = classify(result.error, result.phase)
             attempt = Attempt(
@@ -127,9 +149,11 @@ def run(job_id: str, repo_url: str, repo_dir, manifest: dict, on_event) -> Pathf
             break
 
         finally:
-            # Teardown always runs. An orphaned project costs credits and quota.
+            # Teardown always runs for anything still owned here. An orphaned
+            # project costs credits and quota; a kept one has already cleared
+            # project_id above so it survives this block.
             if project_id:
                 provider.destroy(project_id)
                 on_event("torn_down", {"attempt": attempt_no, "project_id": project_id})
 
-    return PathfinderResult(False, current, attempts, live_url)
+    return PathfinderResult(False, current, attempts, live_url, kept_project_id)

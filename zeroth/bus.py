@@ -19,13 +19,49 @@ def client() -> redis.Redis:
     return _client
 
 
-def enqueue(job_id: str) -> None:
-    client().rpush(settings.queue_key, job_id)
+def enqueue(job_id: str, task: str = "analyze", **extra) -> None:
+    client().rpush(settings.queue_key, json.dumps({"job": job_id, "task": task, **extra}))
 
 
-def dequeue(timeout: int = 5) -> str | None:
+def dequeue(timeout: int = 5) -> dict | None:
+    """Return the next task as {job, task, ...}.
+
+    Payloads are JSON, but a bare job id is still accepted so a queue drained
+    across a deploy of the old single-phase worker does not strand its jobs.
+    """
     item = client().blpop(settings.queue_key, timeout=timeout)
-    return item[1] if item else None
+    if not item:
+        return None
+    raw = item[1]
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return {"job": raw, "task": "analyze"}
+    if isinstance(payload, dict) and payload.get("job"):
+        payload.setdefault("task", "analyze")
+        return payload
+    return {"job": str(payload), "task": "analyze"}
+
+
+def stash_token(job_id: str, token: str, ttl: int = 900) -> None:
+    """Hold a user's Zerops token just long enough for the worker to pick it up.
+
+    It is never written to Postgres, never rendered into an artifact, and the
+    reader deletes it on the way out - so an abandoned request expires by
+    itself rather than lingering as stored credentials.
+    """
+    client().set(f"zeroth:tok:{job_id}", token, ex=ttl)
+
+
+def take_token(job_id: str) -> str:
+    """Read-and-delete: the token is single-use per verification request."""
+    key = f"zeroth:tok:{job_id}"
+    r = client()
+    pipe = r.pipeline()
+    pipe.get(key)
+    pipe.delete(key)
+    value, _ = pipe.execute()
+    return value or ""
 
 
 def channel(job_id: str) -> str:

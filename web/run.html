@@ -154,6 +154,48 @@
     <!-- Result banner (shown once the job reaches a terminal state) -->
     <div id="result-banner" class="hidden glass-panel rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-l-4"></div>
 
+    <!-- Try it out. Verification is opt-in: nothing is provisioned until this is used. -->
+    <div id="tryout" class="hidden glass-panel rounded-xl p-8 flex flex-col gap-6 border-l-4 border-l-tertiary">
+      <div class="flex items-start gap-4">
+        <span class="material-symbols-outlined text-3xl text-tertiary shrink-0">rocket_launch</span>
+        <div>
+          <h2 class="font-headline-md text-headline-md text-on-surface mb-1">Configuration ready</h2>
+          <p class="font-body-lg text-body-lg text-on-surface-variant">Nothing has been deployed yet. Read the files below, then prove they boot.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label class="cursor-pointer">
+          <input type="radio" name="verify-target" value="ephemeral" class="peer sr-only" checked/>
+          <div class="h-full bg-surface-container p-4 rounded-lg border border-white/5 peer-checked:border-primary peer-checked:bg-primary/10 transition-colors">
+            <div class="font-label-caps text-label-caps text-on-surface mb-1">Throwaway project</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant">Runs on Zeroth's own account and is destroyed the moment it finishes. Nothing to clean up, nothing to pay for.</div>
+          </div>
+        </label>
+        <label class="cursor-pointer">
+          <input type="radio" name="verify-target" value="account" class="peer sr-only"/>
+          <div class="h-full bg-surface-container p-4 rounded-lg border border-white/5 peer-checked:border-primary peer-checked:bg-primary/10 transition-colors">
+            <div class="font-label-caps text-label-caps text-on-surface mb-1">My Zerops account</div>
+            <div class="font-body-sm text-body-sm text-on-surface-variant">Deploys into your own account and leaves it running, so a verified project is yours to keep.</div>
+          </div>
+        </label>
+      </div>
+
+      <div id="token-row" class="hidden flex-col gap-2">
+        <label for="zerops-token" class="font-label-caps text-label-caps text-on-surface-variant">Zerops personal access token</label>
+        <input id="zerops-token" type="password" autocomplete="off" spellcheck="false" class="bg-surface-container border border-white/10 rounded-lg px-4 py-3 font-code-sm text-code-sm text-white placeholder:text-outline-variant focus:border-primary focus:ring-0" placeholder="Used for this deployment only"/>
+        <p class="font-body-sm text-body-sm text-on-surface-variant">Used once, for this deployment, then discarded. It is never stored in Zeroth's database, its logs, or the downloadable bundle. Failed attempts are torn down; only a project that came up is left standing.</p>
+      </div>
+
+      <div class="flex items-center gap-4 flex-wrap">
+        <button id="tryout-go" type="button" class="bg-primary text-on-primary font-label-caps text-label-caps px-6 py-3 rounded-lg hover:bg-primary-container transition-colors uppercase flex items-center gap-2">
+          <span class="material-symbols-outlined text-[18px]">play_arrow</span> Try it out
+        </button>
+        <span class="font-body-sm text-body-sm text-on-surface-variant">Takes a few minutes — building is the slow part.</span>
+        <p id="tryout-err" class="font-body-sm text-body-sm text-error hidden w-full"></p>
+      </div>
+    </div>
+
     <!-- Result bento grid -->
     <div id="result-grid" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div class="lg:col-span-2 space-y-6">

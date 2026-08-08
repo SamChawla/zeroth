@@ -13,6 +13,7 @@ from zeroth.worker import ingest, pathfinder
 from zeroth.worker.analyze import analyze
 from zeroth.worker.fingerprint import build as build_fingerprint
 from zeroth.worker.generate import render_import_yaml, render_report, render_zerops_yaml
+from zeroth.worker.providers import get_provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("zeroth.worker")
@@ -33,10 +34,14 @@ def _set_status(db, job: Job, status: str, detail: str = "") -> None:
     bus.publish(job.id, "status", {"status": status, "detail": detail})
 
 
-def process(job_id: str) -> None:
+def process_analyze(job_id: str) -> None:
+    """Phase A: read the repository and write the configuration.
+
+    Provisions nothing and costs no credits, so it can finish in seconds and
+    hand the user something to read. Deploying it is a separate, opt-in phase.
+    """
     db = SessionLocal()
     repo_dir = None
-    slot = False
     try:
         job = db.get(Job, job_id)
         if not job:
@@ -71,66 +76,144 @@ def process(job_id: str) -> None:
             "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
         })
 
-        verified = False
-        attempts = []
-        if settings.pathfinder_provider != "off":
-            slot = bus.acquire_run_slot()
-            if slot:
-                _set_status(db, job, "verifying", "Sending a pathfinder run")
-                result = pathfinder.run(
-                    job.id, job.repo_url, repo_dir, manifest,
-                    lambda ev, payload: bus.publish(job.id, ev, payload),
-                )
-                verified = result.verified
-                attempts = result.attempts
-                manifest = result.manifest
-                job.manifest = manifest
-                _persist_attempts(db, job, attempts)
-
-                if verified:
-                    import_yaml = render_import_yaml(manifest, job.repo_url, verified=True)
-                    zerops_yaml = render_zerops_yaml(manifest, job.repo_url)
-                    _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
-                    _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
-            else:
-                bus.publish(job.id, "queued_for_capacity", {
-                    "detail": "Verification queue is full; configuration was still generated.",
-                })
-
-        headline = (
-            "Verified — this configuration was deployed and came up."
-            if verified
-            else "Generated, not verified."
-        )
-        detail = (
-            f"Zeroth deployed this repository to an ephemeral Zerops project and "
-            f"confirmed it started after {len(attempts)} attempt(s)."
-            if verified
-            else "Review before deploying. See the attempt history below."
-        )
-        report = render_report(job, job.fingerprint, manifest,
-                               db.query(Run).filter_by(job_id=job.id).order_by(Run.attempt_no).all(),
-                               (headline, detail))
-        _save(db, job, "deployment_md", "DEPLOYMENT.md", report)
-
+        _write_report(db, job, manifest)
         job.finished_at = datetime.now(timezone.utc)
-        _set_status(db, job, "done" if verified or not attempts else "done", headline)
-        bus.publish(job.id, "complete", {"verified": verified})
+        _set_status(db, job, "ready", "Configuration ready — review it, then try it out.")
+        bus.publish(job.id, "ready", {
+            "verifiable": settings.pathfinder_provider != "off",
+        })
 
     except (RepoRejected, Exception) as exc:  # noqa: BLE001
-        log.exception("job %s failed", job_id)
+        _fail(db, job_id, exc)
+    finally:
+        if repo_dir:
+            ingest.cleanup(repo_dir)
+        db.close()
+
+
+def process_verify(job_id: str, target: str) -> None:
+    """Phase B: prove the configuration by deploying it. Only runs when asked.
+
+    target="ephemeral" provisions a throwaway project on Zeroth's own account
+    and always tears it down. target="account" deploys into the user's account
+    using a token they supplied for this request alone, and deliberately leaves
+    the project standing - tearing down someone's own project would be the
+    opposite of what they asked for.
+    """
+    db = SessionLocal()
+    repo_dir = None
+    provider = None
+    slot = False
+    try:
         job = db.get(Job, job_id)
-        if job:
-            job.error = str(exc)[:1000]
-            job.finished_at = datetime.now(timezone.utc)
-            _set_status(db, job, "failed", str(exc)[:300])
-            bus.publish(job.id, "complete", {"verified": False})
+        if not job or not job.manifest:
+            return
+
+        token = bus.take_token(job_id) if target == "account" else ""
+        if target == "account" and not token:
+            _set_status(db, job, "ready", "That verification request expired — start it again.")
+            bus.publish(job.id, "verify_rejected", {"reason": "token_expired"})
+            return
+
+        slot = bus.acquire_run_slot()
+        if not slot:
+            _set_status(db, job, "ready", "Verification queue is full — try again shortly.")
+            bus.publish(job.id, "verify_rejected", {"reason": "at_capacity"})
+            return
+
+        job.verify_target = target
+        db.commit()
+        _set_status(db, job, "verifying", f"Deploying to {_target_phrase(target)}")
+
+        clone_url, _, _ = normalise(job.repo_url)
+        repo_dir = ingest.clone(clone_url)
+
+        provider = get_provider(token=token)
+        result = pathfinder.run(
+            job.id, job.repo_url, repo_dir, job.manifest,
+            lambda ev, payload: bus.publish(job.id, ev, payload),
+            provider=provider,
+            keep_project=(target == "account"),
+        )
+
+        manifest = result.manifest
+        job.manifest = manifest
+        job.verified = result.verified
+        job.live_url = result.live_url
+        if target == "account":
+            job.kept_project_id = result.project_id
+        _persist_attempts(db, job, result.attempts)
+
+        if result.verified:
+            import_yaml = render_import_yaml(manifest, job.repo_url, verified=True)
+            zerops_yaml = render_zerops_yaml(manifest, job.repo_url)
+            _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
+            _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
+            bus.publish(job.id, "config", {
+                "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
+            })
+
+        _write_report(db, job, manifest, result.verified, result.attempts)
+        job.finished_at = datetime.now(timezone.utc)
+        _set_status(db, job, "done", _headline(result.verified, result.attempts)[0])
+        bus.publish(job.id, "complete", {
+            "verified": result.verified,
+            "live_url": result.live_url,
+            "kept_project_id": job.kept_project_id,
+        })
+
+    except (RepoRejected, Exception) as exc:  # noqa: BLE001
+        _fail(db, job_id, exc)
     finally:
         if slot:
             bus.release_run_slot()
         if repo_dir:
             ingest.cleanup(repo_dir)
+        if provider is not None:
+            close = getattr(provider, "close", None)
+            if close:
+                close()
         db.close()
+
+
+def _target_phrase(target: str) -> str:
+    return "your Zerops account" if target == "account" else "a throwaway project"
+
+
+def _headline(verified: bool, attempts) -> tuple[str, str]:
+    if verified:
+        return (
+            "Verified — this configuration was deployed and came up.",
+            f"Zeroth deployed this repository and confirmed it started after "
+            f"{len(attempts)} attempt(s).",
+        )
+    if attempts:
+        return (
+            "Not verified — the deployment did not come up.",
+            "Review the attempt history below before deploying this yourself.",
+        )
+    return (
+        "Generated, not verified.",
+        "Nothing has been provisioned. Run a verification to prove it boots.",
+    )
+
+
+def _write_report(db, job: Job, manifest: dict, verified: bool = False, attempts=()) -> None:
+    runs = db.query(Run).filter_by(job_id=job.id).order_by(Run.attempt_no).all()
+    report = render_report(job, job.fingerprint, manifest, runs,
+                           _headline(verified, attempts))
+    _save(db, job, "deployment_md", "DEPLOYMENT.md", report)
+
+
+def _fail(db, job_id: str, exc: Exception) -> None:
+    log.exception("job %s failed", job_id)
+    job = db.get(Job, job_id)
+    if not job:
+        return
+    job.error = str(exc)[:1000]
+    job.finished_at = datetime.now(timezone.utc)
+    _set_status(db, job, "failed", str(exc)[:300])
+    bus.publish(job.id, "complete", {"verified": False})
 
 
 def _save(db, job: Job, kind: str, filename: str, content: str) -> None:
@@ -161,10 +244,15 @@ def main() -> None:
     init_db()
     log.info("worker ready, provider=%s", settings.pathfinder_provider)
     while _running:
-        job_id = bus.dequeue(timeout=5)
-        if job_id:
-            log.info("picked up job %s", job_id)
-            process(job_id)
+        task = bus.dequeue(timeout=5)
+        if not task:
+            continue
+        job_id, kind = task["job"], task.get("task", "analyze")
+        log.info("picked up job %s (%s)", job_id, kind)
+        if kind == "verify":
+            process_verify(job_id, task.get("target", "ephemeral"))
+        else:
+            process_analyze(job_id)
     log.info("worker stopped")
 
 

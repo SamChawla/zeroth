@@ -25,9 +25,12 @@ class Settings(BaseSettings):
     zeroth_public_url: str = "http://localhost:8000"
 
     max_repo_mb: int = 50
-    max_attempts: int = 3
-    provision_timeout_s: int = 180
-    deploy_timeout_s: int = 300
+    # Verification is opt-in and someone is watching it happen, so it is tuned
+    # for a bounded wait rather than maximum persistence: two attempts still
+    # demonstrates the repair loop, three mostly demonstrates patience.
+    max_attempts: int = 2
+    provision_timeout_s: int = 120
+    deploy_timeout_s: int = 240
     max_concurrent_runs: int = 2
     rate_limit_per_hour: int = 10
 

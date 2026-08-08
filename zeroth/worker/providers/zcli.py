@@ -35,7 +35,9 @@ Everything below is confirmed against a real project on a live account
   for communication with our support: <id>" - the Zerops GUI or support
   channel has more than the CLI exposes here).
 """
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -53,28 +55,68 @@ class ZcliError(Exception):
 
 
 class ZcliProvider:
+    """One instance owns one zcli session, in its own throwaway HOME.
+
+    `zcli login` writes a session file under HOME rather than taking auth per
+    command, so a shared HOME would mean concurrent runs overwriting each
+    other's credentials - and a run against a user's own account silently
+    replacing Zeroth's. Each instance therefore gets an isolated HOME, which
+    makes the account-targeted run safe and disposable. Call close() when done.
+    """
+
     name = "zcli"
 
-    def __init__(self) -> None:
+    def __init__(self, token: str | None = None) -> None:
+        self._token = token or settings.zcli_token
+        self._own_account = not token
+        self._home: str | None = None
         self._logged_in = False
+
+    def _env(self) -> dict:
+        if self._home is None:
+            self._home = tempfile.mkdtemp(prefix="zeroth-zcli-")
+        env = dict(os.environ)
+        env["HOME"] = self._home
+        return env
 
     def _ensure_login(self) -> None:
         if self._logged_in:
             return
+        if not self._token:
+            raise ZcliError("no Zerops token available for this run")
         proc = subprocess.run(
-            ["zcli", "login", settings.zcli_token],
-            capture_output=True, text=True, timeout=30,
+            ["zcli", "login", self._token],
+            capture_output=True, text=True, timeout=30, env=self._env(),
         )
         if proc.returncode != 0:
+            source = "ZCLI_TOKEN" if self._own_account else "the token you supplied"
             raise ZcliError(
-                "zcli login failed — check ZCLI_TOKEN: "
-                + (proc.stderr.strip() or proc.stdout.strip())[:300]
+                f"zcli login failed — check {source}: "
+                + self._scrub(proc.stderr.strip() or proc.stdout.strip())[:300]
             )
         self._logged_in = True
 
     def _run(self, args: list[str], timeout: int = 120, cwd: str | None = None) -> subprocess.CompletedProcess:
         self._ensure_login()
-        return subprocess.run(["zcli", *args], capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        return subprocess.run(
+            ["zcli", *args], capture_output=True, text=True,
+            timeout=timeout, cwd=cwd, env=self._env(),
+        )
+
+    def _scrub(self, text: str) -> str:
+        """Keep the token out of anything that reaches the database or the UI.
+
+        zcli echoes its arguments back on some failures, and build logs are
+        persisted verbatim on every attempt.
+        """
+        return text.replace(self._token, "<redacted>") if self._token else text
+
+    def close(self) -> None:
+        """Drop the session file. Must never raise - it runs in a finally."""
+        if self._home:
+            shutil.rmtree(self._home, ignore_errors=True)
+            self._home = None
+        self._logged_in = False
 
     def create_project(self, import_yaml: str, project_name: str) -> str:
         actual_name = (yaml.safe_load(import_yaml).get("project") or {}).get("name") or project_name
@@ -124,14 +166,16 @@ class ZcliProvider:
             )
             log_chunks.append(f"--- {setup} ---\n{proc.stdout}\n{proc.stderr}")
             if proc.returncode != 0:
-                combined = "\n".join(log_chunks)
+                combined = self._scrub("\n".join(log_chunks))
                 return DeployResult(
                     ok=False, phase="runtime", project_id=project_id,
                     logs=combined[-8000:],
-                    error=_first_error(proc.stdout + proc.stderr) or f"{setup} deploy failed",
+                    error=self._scrub(
+                        _first_error(proc.stdout + proc.stderr) or f"{setup} deploy failed"
+                    ),
                 )
 
-        combined = "\n".join(log_chunks)
+        combined = self._scrub("\n".join(log_chunks))
         url = self._public_url(project_id, setups)
         return DeployResult(
             ok=True, phase="runtime", project_id=project_id,

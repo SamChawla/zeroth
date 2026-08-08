@@ -13,7 +13,11 @@ class SimulatedProvider:
     name = "simulated"
 
     def __init__(self) -> None:
-        self._attempts: dict[str, int] = {}
+        # Counted per run, not per project: every attempt provisions a NEW
+        # project, so keying this by project id would make attempt 2 look like
+        # attempt 1 and the simulated run could never reach a passing state.
+        # One provider instance serves one pathfinder run.
+        self._attempt = 0
 
     def create_project(self, import_yaml: str, project_name: str) -> str:
         time.sleep(0.4)
@@ -21,10 +25,9 @@ class SimulatedProvider:
 
     def deploy(self, project_id: str, repo_dir, zerops_yaml: str) -> DeployResult:
         time.sleep(0.8)
-        n = self._attempts.get(project_id, 0) + 1
-        self._attempts[project_id] = n
+        self._attempt += 1
 
-        if n == 1:
+        if self._attempt == 1:
             return DeployResult(
                 ok=False,
                 phase="runtime",
@@ -56,4 +59,4 @@ class SimulatedProvider:
         return {"http": 200, "health": "passed"}
 
     def destroy(self, project_id: str) -> None:
-        self._attempts.pop(project_id, None)
+        """Nothing was provisioned, so there is nothing to tear down."""

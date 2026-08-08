@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from zeroth.config import settings
@@ -23,10 +23,25 @@ class Base(DeclarativeBase):
     pass
 
 
+# create_all() only ever CREATEs missing tables - it will not add a column to a
+# table that already exists, so columns introduced after the first deploy need
+# stating here. Postgres' IF NOT EXISTS makes each one idempotent, which keeps
+# this honest without pulling in a migration framework for a handful of columns.
+_ADDED_COLUMNS = (
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS verify_target VARCHAR(20) DEFAULT ''",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS live_url VARCHAR(500) DEFAULT ''",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS kept_project_id VARCHAR(100) DEFAULT ''",
+)
+
+
 def init_db() -> None:
     from zeroth import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        for statement in _ADDED_COLUMNS:
+            conn.execute(text(statement))
 
 
 def get_session():

@@ -15,10 +15,16 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Phase A ends at "ready": configuration exists and is shown to the user, and
+# nothing has been provisioned. Verification is a separate, explicitly
+# requested phase - "ready" is a terminal state for a job nobody asks to verify.
 JOB_STATES = (
     "queued", "validating", "ingesting", "analyzing",
-    "generating", "verifying", "repairing", "done", "failed",
+    "generating", "ready", "verifying", "repairing", "done", "failed",
 )
+
+# Where an explicitly requested verification run is sent.
+VERIFY_TARGETS = ("ephemeral", "account")
 
 # Three failure classes: schema (caught locally, no provisioning),
 # infrastructure (import rejected), runtime (built but did not come up).
@@ -39,6 +45,15 @@ class Job(Base):
     is_gallery: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Verification is opt-in and recorded separately from the generate phase, so
+    # a "ready" job stays distinguishable from one that was tried and failed.
+    verify_target: Mapped[str] = mapped_column(String(20), default="")
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    live_url: Mapped[str] = mapped_column(String(500), default="")
+    # Only set for target="account": that project is deliberately NOT torn down,
+    # so the id is the user's handle on what Zeroth left behind.
+    kept_project_id: Mapped[str] = mapped_column(String(100), default="")
 
     runs: Mapped[list["Run"]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="Run.attempt_no"

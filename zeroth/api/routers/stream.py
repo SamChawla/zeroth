@@ -11,7 +11,12 @@ from zeroth.models import Job
 
 router = APIRouter(prefix="/api/jobs", tags=["stream"])
 
-TERMINAL = {"done", "failed"}
+# "ready" is terminal for the stream, not for the job: phase A is over and
+# nothing further arrives unless the user asks for a verification, at which
+# point the browser opens a fresh stream. Holding the connection open would
+# mean every generated-but-unverified job parks a socket indefinitely.
+TERMINAL = {"ready", "done", "failed"}
+CLOSING_EVENTS = {"complete", "ready"}
 
 
 @router.get("/{job_id}/events")
@@ -37,7 +42,7 @@ async def events(job_id: str, db: Session = Depends(get_session)):
                     payload = message["data"]
                     yield f"data: {payload}\n\n"
                     try:
-                        if json.loads(payload).get("event") == "complete":
+                        if json.loads(payload).get("event") in CLOSING_EVENTS:
                             # Explicit terminal event; the client closes on this
                             # so the browser does not reconnect forever.
                             yield "event: close\ndata: {}\n\n"

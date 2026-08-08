@@ -1,10 +1,23 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class JobCreate(BaseModel):
     repo_url: str = Field(min_length=8, max_length=500)
+
+
+class VerifyRequest(BaseModel):
+    """Ask for a generated configuration to actually be deployed.
+
+    target="ephemeral" uses Zeroth's own throwaway project and tears it down.
+    target="account" deploys into the caller's Zerops account and leaves it
+    standing; the token is used for that one run and never stored.
+    """
+
+    target: Literal["ephemeral", "account"] = "ephemeral"
+    token: str | None = Field(default=None, max_length=500)
 
 
 class ArtifactOut(BaseModel):
@@ -44,6 +57,10 @@ class JobOut(BaseModel):
     error: str
     created_at: datetime
     finished_at: datetime | None
+    verify_target: str = ""
+    verified: bool = False
+    live_url: str = ""
+    kept_project_id: str = ""
     runs: list[RunOut] = []
     artifacts: list[ArtifactOut] = []
 

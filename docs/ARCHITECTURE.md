@@ -4,12 +4,17 @@
 
 Config generators are easy and mostly worthless: plausible YAML that does not
 boot is worse than no YAML. Zeroth's product is the **verification loop** —
-config is only returned once it has been deployed to a real ephemeral Zerops
-project and watched come up.
+config that has been deployed to a real Zerops project and watched come up.
+
+The loop is deliberately *not* on the default path. Provisioning costs minutes
+and credits, and a user who has not read the config yet has no reason to want
+either spent. So the pipeline stops with the configuration in hand, and
+verification is a second phase that only runs when someone asks for it.
 
 ## Pipeline
 
 ```
+PHASE A — always runs, provisions nothing, finishes in seconds
 GitHub URL
   ├─ safety      admission control: host allowlist, size preflight, private-IP refusal
   ├─ ingest      shallow clone (--depth 1 --single-branch), size re-check
@@ -17,14 +22,31 @@ GitHub URL
   ├─ analyze     model reasons over facts only → manifest JSON
   ├─ validate    JSON Schema + semantic checks        ← FAILURE CLASS 1 (local, free)
   ├─ generate    Jinja → import YAML + zerops.yaml, parsed before use
-  ├─ pathfinder  ephemeral project
-  │    ├─ create                                      ← FAILURE CLASS 2 (import rejected)
-  │    ├─ deploy + poll (circuit breaker)             ← FAILURE CLASS 3 (built, did not run)
-  │    ├─ logs + verify
-  │    ├─ on failure → diagnose → patch → retry (max 3)
-  │    └─ destroy (finally, always)
-  └─ emit        bundle + DEPLOYMENT.md with the full evidence and repair trail
+  └─ READY       configuration returned; nothing provisioned
+
+PHASE B — only on explicit request (POST /api/jobs/{id}/verify)
+  └─ pathfinder  target: throwaway project | the user's own account
+       ├─ create                                      ← FAILURE CLASS 2 (import rejected)
+       ├─ deploy + poll (circuit breaker)             ← FAILURE CLASS 3 (built, did not run)
+       ├─ logs + verify
+       ├─ on failure → diagnose → patch → retry (max 2)
+       ├─ destroy failed attempts (finally, always)
+       └─ keep the passing project ONLY when the target is the user's account
+     emit        bundle + DEPLOYMENT.md with the full evidence and repair trail
 ```
+
+## Verification targets
+
+`ephemeral` runs on Zeroth's own credentials and is always destroyed.
+`account` runs on a token the user supplies for that single request: it is
+stashed in Valkey under a TTL, read once by the worker, and deleted on read —
+never persisted to Postgres, never rendered into an artifact, and scrubbed out
+of any log line it might otherwise reach.
+
+Because `zcli login` persists a session file under `HOME` rather than
+authenticating per command, each provider instance gets its own throwaway
+`HOME`. Without that, a run against a user's account would overwrite Zeroth's
+own session, and two concurrent runs would race for the same credentials.
 
 ## The three failure classes
 

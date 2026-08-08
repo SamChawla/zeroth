@@ -3,14 +3,16 @@
 **From repository to verified deployment.**
 
 Paste a public repository URL. Zeroth reads it, decides the Zerops
-architecture, writes the configuration, deploys it to a throwaway Zerops
-project, watches it build, and repairs the configuration when it fails — then
-hands back config it has actually watched boot.
+architecture, and writes the configuration — in seconds, without provisioning
+anything. Then, if you ask it to, it deploys that configuration for real,
+watches it build, and repairs it when it fails.
 
 Most config generators hand you plausible YAML. Plausible YAML that does not
-boot is worse than none, so Zeroth proves it first.
+boot is worse than none, so Zeroth will prove it — on request.
 
 ## How it works
+
+Two phases. The first is free and fast; the second only happens when you ask.
 
 ```
 repository
@@ -20,11 +22,31 @@ fingerprint (facts + evidence)
 manifest  →  validated against schema locally     ← failure class 1
    ↓  Jinja templates render the YAML
 zerops-project-import.yaml + zerops.yaml
-   ↓  ephemeral Zerops project                    ← failure class 2
+   ↓
+READY — configuration in hand, nothing provisioned
+   ↓  ← you press "Try it out"; pick where it lands
+real Zerops project                                ← failure class 2
 deploy, read logs, verify                          ← failure class 3
-   ↓  on failure: diagnose → patch → redeploy (max 3)
-verified bundle + DEPLOYMENT.md + teardown
+   ↓  on failure: diagnose → patch → redeploy (max 2)
+verified bundle + DEPLOYMENT.md
 ```
+
+### Why verification is opt-in
+
+Deploying costs minutes and credits, and most people want to read the config
+before anything is provisioned on their behalf. Stopping at `READY` makes the
+common path fast and free, and turns the expensive part into a deliberate act.
+
+### Where a verification run lands
+
+| Target | What happens | Teardown |
+|---|---|---|
+| Throwaway project | Provisioned on Zeroth's own account | Always destroyed |
+| Your Zerops account | Provisioned with a token you supply for that one run | Kept if it came up; failed attempts are always destroyed |
+
+The token is held only for the run — never written to the database, the logs,
+or the downloadable bundle — and each run gets an isolated `zcli` session so
+concurrent runs cannot see each other's credentials.
 
 ### Why failures are classified
 

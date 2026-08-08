@@ -77,6 +77,8 @@ function resetRun() {
   $("attempt-list").innerHTML = "";
   hide("result-banner");
   hide("result-grid");
+  hide("tryout");
+  hide("tryout-err");
   setStage("fingerprint", "pending", "Pending");
   setStage("reason", "pending", "Pending");
   setStage("verify", "pending", "Pending");
@@ -141,8 +143,27 @@ function handle(msg, jobId) {
       $("download").href = `${API}/api/jobs/${jobId}/bundle`;
       setStage("reason", "complete", "Complete");
       logLine("[generate] zerops-project-import.yaml + zerops.yaml written");
+      // The config is the deliverable, so show it as soon as it exists rather
+      // than making it wait behind a deployment the user has not asked for.
+      renderConfig();
+      break;
+    case "ready":
+      stopClock();
+      setStage("verify", "pending", "Not run");
+      $("stage-verify-note").textContent =
+        "Nothing has been provisioned. Start a verification to prove this configuration boots.";
+      logLine("[ready] configuration generated — nothing deployed", "text-tertiary");
+      $("live-dot").className = "w-3 h-3 rounded-full bg-tertiary";
+      if (msg.verifiable !== false) showTryout();
+      break;
+    case "verify_rejected":
+      tryoutError(msg.reason === "at_capacity"
+        ? "The verification queue is full right now. Try again in a few minutes."
+        : "That request expired. Enter your token again.");
+      showTryout();
       break;
     case "attempt_started":
+      hide("tryout");
       setStage("verify", "active", "Verifying");
       $("stage-verify-note").textContent = `Attempt ${msg.attempt} — provisioning via ${msg.provider}.`;
       $("run-provider").textContent = msg.provider;
@@ -173,11 +194,15 @@ function handle(msg, jobId) {
         <div class="font-body-sm text-body-sm text-on-surface-variant">${escape(JSON.stringify(msg.verification || {}))}</div>`);
       setStage("verify", "complete", "Verified");
       break;
+    case "kept":
+      logLine(`KEPT project ${msg.project_id} in your account — ${msg.url || "no public URL"}`, "text-primary-fixed");
+      break;
     case "complete":
       stopClock();
+      hide("tryout");
       logLine(`DONE — verified=${msg.verified}`, msg.verified ? "text-primary-fixed" : "text-tertiary");
       if (!msg.verified) setStage("verify", "failed", "Not verified");
-      renderResult(msg.verified);
+      renderResult(msg.verified, msg.live_url, msg.kept_project_id);
       break;
   }
 }
@@ -227,11 +252,53 @@ function appendAttempt(n, html) {
   if (body) body.insertAdjacentHTML("beforeend", html);
 }
 
-function renderResult(verified) {
+/* The config panel stands on its own: it is what the user came for, and it is
+   meaningful whether or not anyone ever asks for a deployment. */
+function renderConfig() {
+  $("why-services").innerHTML = Array.from(document.querySelectorAll("#services > div")).map((el) => el.outerHTML).join("")
+    || '<p class="font-body-sm text-body-sm text-on-surface-variant">No services were generated.</p>';
+  renderBootLog(null);
+  show("result-grid");
+}
+
+function renderBootLog(verified) {
+  const state = verified === null
+    ? { dot: "bg-outline", pill: "text-outline bg-surface-container", label: "NOT DEPLOYED" }
+    : verified
+      ? { dot: "bg-emerald-400", pill: "text-emerald-400 bg-emerald-400/10", label: "HEALTHY" }
+      : { dot: "bg-outline", pill: "text-outline bg-surface-container", label: "UNVERIFIED" };
+
+  $("boot-log").innerHTML = "";
+  document.querySelectorAll("#services > div").forEach((svcEl) => {
+    const hostname = svcEl.querySelector(".font-bold")?.textContent || "";
+    $("boot-log").insertAdjacentHTML("beforeend", `
+      <div class="flex items-center justify-between p-3 rounded bg-surface/50 border border-white/5">
+        <div class="flex items-center gap-3">
+          <span class="w-2 h-2 rounded-full ${state.dot}"></span>
+          <span class="font-code-sm text-code-sm font-bold">${escape(hostname)}</span>
+        </div>
+        <span class="font-label-caps text-label-caps ${state.pill} px-2 py-1 rounded">${state.label}</span>
+      </div>`);
+  });
+}
+
+function renderResult(verified, liveUrl, keptProjectId) {
   const banner = $("result-banner");
   banner.className = `glass-panel rounded-xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 border-l-4 ${
     verified ? "border-l-emerald-400 bg-emerald-500/10" : "border-l-tertiary bg-tertiary/10"
   }`;
+
+  const kept = verified && keptProjectId
+    ? `<p class="font-body-sm text-body-sm text-on-surface-variant mt-2">Left running in your account as project <span class="font-code-sm">${escape(keptProjectId)}</span>.</p>`
+    : verified
+      ? '<p class="font-body-sm text-body-sm text-on-surface-variant mt-2">The throwaway project has been destroyed.</p>'
+      : "";
+  const link = verified && liveUrl
+    ? `<a href="${escape(liveUrl)}" target="_blank" rel="noopener" class="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded font-body-sm hover:brightness-110 transition-all whitespace-nowrap">
+         <span class="material-symbols-outlined text-[18px]">open_in_new</span> Open it
+       </a>`
+    : "";
+
   banner.innerHTML = `
     <div class="flex items-center gap-6">
       <div class="w-16 h-16 rounded-full flex items-center justify-center shrink-0 ${verified ? "bg-success-container" : "bg-surface-container-high"}">
@@ -240,29 +307,81 @@ function renderResult(verified) {
       <div>
         <h1 class="font-headline-xl text-headline-xl ${verified ? "text-primary-fixed" : "text-tertiary-fixed"} mb-2">${verified ? "VERIFIED" : "NOT VERIFIED"}</h1>
         <p class="font-body-lg text-body-lg text-on-surface-variant">${verified
-          ? "Zeroth deployed this repository to an ephemeral Zerops project and confirmed it started."
-          : "Config was generated but did not come up within the attempt limit. Review the trail above before deploying by hand."}</p>
+          ? "Zeroth deployed this repository and confirmed it started."
+          : "It did not come up within the attempt limit. Review the trail above before deploying by hand."}</p>
+        ${kept}
       </div>
-    </div>`;
+    </div>
+    ${link}`;
   show("result-banner");
 
-  $("boot-log").innerHTML = "";
-  document.querySelectorAll("#services > div").forEach((svcEl) => {
-    const hostname = svcEl.querySelector(".font-bold")?.textContent || "";
-    $("boot-log").insertAdjacentHTML("beforeend", `
-      <div class="flex items-center justify-between p-3 rounded bg-surface/50 border border-white/5">
-        <div class="flex items-center gap-3">
-          <span class="w-2 h-2 rounded-full ${verified ? "bg-emerald-400" : "bg-outline"}"></span>
-          <span class="font-code-sm text-code-sm font-bold">${escape(hostname)}</span>
-        </div>
-        <span class="font-label-caps text-label-caps ${verified ? "text-emerald-400 bg-emerald-400/10" : "text-outline bg-surface-container"} px-2 py-1 rounded">${verified ? "HEALTHY" : "UNVERIFIED"}</span>
-      </div>`);
+  renderBootLog(verified);
+  renderConfig();
+}
+
+/* ---------- try it out ---------- */
+
+function showTryout() {
+  $("tryout-go").disabled = false;
+  show("tryout");
+}
+
+function tryoutError(message) {
+  const el = $("tryout-err");
+  el.textContent = message;
+  show("tryout-err");
+  $("tryout-go").disabled = false;
+}
+
+function selectedTarget() {
+  const picked = document.querySelector('input[name="verify-target"]:checked');
+  return picked ? picked.value : "ephemeral";
+}
+
+async function requestVerify() {
+  const target = selectedTarget();
+  const token = $("zerops-token").value.trim();
+  hide("tryout-err");
+
+  if (target === "account" && !token) {
+    tryoutError("Deploying to your own account needs a Zerops personal access token.");
+    return;
+  }
+
+  $("tryout-go").disabled = true;
+  try {
+    const res = await fetch(`${API}/api/jobs/${currentJob}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target, token: target === "account" ? token : null }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      tryoutError(body.detail || `Could not start verification (${res.status}).`);
+      return;
+    }
+    // Drop the token from the page as soon as it has been handed over.
+    $("zerops-token").value = "";
+    hide("tryout");
+    hide("result-banner");
+    $("live-dot").className = "w-3 h-3 rounded-full bg-primary pulse-dot";
+    setStage("verify", "active", "Verifying");
+    startClock();
+    logLine(`> verification requested — target ${target}`, "text-primary-fixed");
+    listen(currentJob);
+  } catch (e) {
+    tryoutError(e.message);
+  }
+}
+
+function initTryout() {
+  document.querySelectorAll('input[name="verify-target"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      $("token-row").classList.toggle("hidden", selectedTarget() !== "account");
+      $("token-row").classList.toggle("flex", selectedTarget() === "account");
+    });
   });
-
-  $("why-services").innerHTML = Array.from(document.querySelectorAll("#services > div")).map((el) => el.outerHTML).join("")
-    || '<p class="font-body-sm text-body-sm text-on-surface-variant">No services were generated.</p>';
-
-  show("result-grid");
+  $("tryout-go").addEventListener("click", requestVerify);
 }
 
 /* ---------- config tabs ---------- */
@@ -286,6 +405,7 @@ function initTabs() {
 
 async function init() {
   initTabs();
+  initTryout();
   const jobId = new URLSearchParams(location.search).get("job");
 
   if (jobId) {

@@ -5,11 +5,11 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Run — Zeroth</title>
 <meta name="description" content="Analyze a repository, read the generated Zerops configuration, then deploy and verify it."/>
-<meta name="theme-color" content="#F8FAFC"/>
+<meta name="theme-color" content="#09090B"/>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
 <script>
   (function () {
-    var pref = localStorage.getItem("zeroth-theme") || "system";
+    var pref = localStorage.getItem("zeroth-theme") || "dark";
     var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
   })();
@@ -134,6 +134,15 @@
             </div>
             <span class="pill pill-idle" id="stage-fingerprint-tag">Pending</span>
           </div>
+          <!-- Driven entirely by real pipeline events; nothing here advances on a
+               timer, so a stalled step stays visibly stalled. -->
+          <div class="mb-4" id="checklist-analyze">
+            <div class="check pending" id="chk-fetch"><span class="check-mark">○</span><span class="check-text text-sm">Repository fetched</span></div>
+            <div class="check pending" id="chk-structure"><span class="check-mark">○</span><span class="check-text text-sm">Structure analyzed</span></div>
+            <div class="check pending" id="chk-runtime"><span class="check-mark">○</span><span class="check-text text-sm">Runtime detected</span></div>
+            <div class="check pending" id="chk-deployable"><span class="check-mark">○</span><span class="check-text text-sm">Deployability assessed</span></div>
+            <div class="check pending" id="chk-config"><span class="check-mark">○</span><span class="check-text text-sm">Configuration generated</span></div>
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="evidence"></div>
         </section>
 
@@ -163,6 +172,13 @@
             <span class="pill pill-idle" id="stage-verify-tag">Pending</span>
           </div>
           <p class="text-sm text-fg2 mb-4" id="stage-verify-note">Nothing has been provisioned.</p>
+          <div class="mb-4 hidden" id="checklist-verify">
+            <div class="check pending" id="chk-project"><span class="check-mark">○</span><span class="check-text text-sm">Project created</span></div>
+            <div class="check pending" id="chk-deploy"><span class="check-mark">○</span><span class="check-text text-sm">Application deployed</span></div>
+            <div class="check pending" id="chk-boot"><span class="check-mark">○</span><span class="check-text text-sm">Application booted</span></div>
+            <div class="check pending" id="chk-health"><span class="check-mark">○</span><span class="check-text text-sm">Health checked</span></div>
+            <div class="check pending" id="chk-teardown"><span class="check-mark">○</span><span class="check-text text-sm">Torn down</span></div>
+          </div>
           <div id="attempt-list" class="flex flex-col gap-3"></div>
         </section>
       </div>
@@ -226,6 +242,8 @@
           bundle. Failed attempts are torn down; only a project that came up is left standing.
         </p>
       </div>
+
+      <p id="tryout-verdict" class="hidden flex items-start gap-2 text-sm text-fg2 rounded-xl border border-edge bg-surface2 p-3.5"></p>
 
       <div class="flex items-center gap-4 flex-wrap">
         <button id="tryout-go" type="button" class="btn btn-primary">

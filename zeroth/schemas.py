@@ -18,6 +18,10 @@ class VerifyRequest(BaseModel):
 
     target: Literal["ephemeral", "account"] = "ephemeral"
     token: str | None = Field(default=None, max_length=500)
+    # Set only after the caller has been shown the compatibility findings and
+    # chosen to deploy regardless. The deployability check exists to stop us
+    # spending minutes and credits proving a failure it already predicted.
+    acknowledge: bool = False
 
 
 class ArtifactOut(BaseModel):

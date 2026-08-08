@@ -79,6 +79,27 @@ def verify_job(
     if not job.manifest or job.status not in ("ready", "done", "failed"):
         raise HTTPException(409, "There is no finished configuration to verify yet.")
 
+    # Honour the deployability verdict. Deploying something the checker already
+    # said will not work costs minutes and credits to reproduce a known answer,
+    # so "not deployable" is refused outright and "needs changes" requires the
+    # caller to have seen the findings and said yes anyway.
+    verdict = (job.compatibility or {}).get("verdict")
+    if verdict == "unsupported":
+        raise HTTPException(
+            409,
+            "This repository has no Zerops runtime, so there is nothing to deploy it "
+            "onto. The deployability check explains what is missing.",
+        )
+    if verdict == "needs_changes" and not body.acknowledge:
+        changes = [f for f in (job.compatibility or {}).get("findings", [])
+                   if f.get("level") == "change"]
+        raise HTTPException(
+            409,
+            f"The deployability check found {len(changes)} change(s) that will most "
+            f"likely make this deployment fail. Review them, then deploy anyway if "
+            f"you want to see it happen.",
+        )
+
     if body.target == "account":
         token = (body.token or "").strip()
         if not token:

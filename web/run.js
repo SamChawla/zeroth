@@ -3,6 +3,7 @@ let currentJob = null;
 let startTime = null;
 let elapsedTimer = null;
 let runProvider = "";
+let compatReport = null;
 
 /* ---------- terminal ---------- */
 
@@ -54,6 +55,44 @@ function setStage(stage, state, text) {
     : escape(text);
 }
 
+/* ---------- checklist ----------
+   Every transition here is driven by a real pipeline event. Nothing advances on
+   a timer, so a step that is stuck looks stuck rather than looking busy. */
+
+const MARK = { pending: "○", active: "●", done: "✓", failed: "✕" };
+
+function setCheck(id, state, text) {
+  const el = $(id);
+  if (!el) return;
+  el.className = `check ${state}`;
+  el.querySelector(".check-mark").textContent = MARK[state] || MARK.pending;
+  if (text) el.querySelector(".check-text").textContent = text;
+}
+
+const ANALYZE_CHECKS = ["chk-fetch", "chk-structure", "chk-runtime", "chk-deployable", "chk-config"];
+const VERIFY_CHECKS = ["chk-project", "chk-deploy", "chk-boot", "chk-health", "chk-teardown"];
+
+function resetChecks() {
+  const labels = {
+    "chk-fetch": "Repository fetched", "chk-structure": "Structure analyzed",
+    "chk-runtime": "Runtime detected", "chk-deployable": "Deployability assessed",
+    "chk-config": "Configuration generated", "chk-project": "Project created",
+    "chk-deploy": "Application deployed", "chk-boot": "Application booted",
+    "chk-health": "Health checked", "chk-teardown": "Torn down",
+  };
+  [...ANALYZE_CHECKS, ...VERIFY_CHECKS].forEach((id) => setCheck(id, "pending", labels[id]));
+  hide("checklist-verify");
+}
+
+/* A failure stops the run, so every step still pending is one that never got
+   its turn - saying so beats leaving them looking merely unfinished. */
+function abandonChecks(ids) {
+  ids.forEach((id) => {
+    const el = $(id);
+    if (el && el.classList.contains("active")) setCheck(id, "failed");
+  });
+}
+
 /* ---------- starting a run ---------- */
 
 async function start(url) {
@@ -80,7 +119,10 @@ function resetRun() {
   hide("result-grid");
   hide("tryout");
   hide("tryout-err");
+  hide("tryout-verdict");
   hide("compat");
+  compatReport = null;
+  resetChecks();
   setStage("fingerprint", "pending", "Pending");
   setStage("reason", "pending", "Pending");
   setStage("verify", "pending", "Pending");
@@ -127,18 +169,36 @@ function handle(msg, jobId) {
   switch (msg.event) {
     case "status":
       logLine(`[status] ${msg.status}${msg.detail ? " — " + msg.detail : ""}`);
-      if (["validating", "ingesting"].includes(msg.status)) setStage("fingerprint", "active", "Running");
+      if (["validating", "ingesting"].includes(msg.status)) {
+        setStage("fingerprint", "active", "Running");
+        setCheck("chk-fetch", "active");
+      }
       if (["analyzing", "generating", "checking"].includes(msg.status)) setStage("reason", "active", "Generating");
       if (msg.status === "verifying") setStage("verify", "active", "Verifying");
-      if (msg.status === "failed") logLine(`[failed] ${msg.detail || ""}`, "text-red-400");
+      if (msg.status === "checking") setCheck("chk-deployable", "active");
+      if (msg.status === "generating") setCheck("chk-config", "active");
+      if (msg.status === "failed") {
+        logLine(`[failed] ${msg.detail || ""}`, "text-red-400");
+        abandonChecks([...ANALYZE_CHECKS, ...VERIFY_CHECKS]);
+      }
       break;
-    case "fingerprint":
+    case "fingerprint": {
       renderEvidence(msg.fingerprint);
+      const fp = msg.fingerprint || {};
+      const runtime = [fp.language, fp.runtime_version].filter(Boolean).join(" ") || "unknown";
+      setCheck("chk-fetch", "done");
+      setCheck("chk-structure", "done");
+      setCheck("chk-runtime", "done", `Runtime detected: ${runtime}`);
       setStage("fingerprint", "complete", "Complete");
+    }
       break;
-    case "compatibility":
+    case "compatibility": {
       renderCompatibility(msg.compatibility);
+      const c = msg.compatibility || {};
+      setCheck("chk-deployable", c.verdict === "unsupported" ? "failed" : "done",
+               c.headline || "Deployability assessed");
       break;
+    }
     case "manifest":
       renderServices(msg.manifest);
       setStage("reason", "active", "Generating");
@@ -151,6 +211,7 @@ function handle(msg, jobId) {
       logLine("[generate] zerops-project-import.yaml + zerops.yaml written");
       // The config is the deliverable, so show it as soon as it exists rather
       // than making it wait behind a deployment the user has not asked for.
+      setCheck("chk-config", "done");
       renderConfig();
       break;
     case "ready":
@@ -170,6 +231,8 @@ function handle(msg, jobId) {
       break;
     case "attempt_started":
       hide("tryout");
+      show("checklist-verify");
+      setCheck("chk-project", "active");
       setStage("verify", "active", "Verifying");
       $("stage-verify-note").textContent = `Attempt ${msg.attempt} — provisioning via ${msg.provider}.`;
       runProvider = msg.provider || "";
@@ -178,10 +241,14 @@ function handle(msg, jobId) {
       logLine(`> attempt ${msg.attempt} — provisioning via ${msg.provider}`, "text-indigo-300");
       break;
     case "stage":
+      if (msg.stage === "provisioning") setCheck("chk-project", "active");
+      if (msg.stage === "deploying") { setCheck("chk-project", "done"); setCheck("chk-deploy", "active"); }
+      if (msg.stage === "diagnosing") abandonChecks(VERIFY_CHECKS);
       logLine(`  ${msg.stage}… (attempt ${msg.attempt})`);
       appendAttempt(msg.attempt, `<div class="text-sm text-fg2 flex items-center gap-2"><span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>${escape(msg.stage)}…</div>`);
       break;
     case "attempt_failed":
+      abandonChecks(VERIFY_CHECKS);
       logLine(`FAIL attempt ${msg.attempt}: ${msg.failure_class} — ${msg.error || ""}`, "text-red-400");
       appendAttempt(msg.attempt, `
         <div><span class="pill pill-failed">Failed — ${escape(msg.failure_class)}</span></div>
@@ -202,10 +269,15 @@ function handle(msg, jobId) {
       appendAttempt(msg.attempt, `
         <div><span class="pill pill-verified"><span class="dot bg-success"></span> Verified in ${msg.elapsed}s</span></div>
         <div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(msg.verification || {}))}</div>`);
+      VERIFY_CHECKS.slice(0, 4).forEach((id) => setCheck(id, "done"));
       setStage("verify", runProvider === "simulated" ? "failed" : "complete",
                runProvider === "simulated" ? "Simulated" : "Verified");
       break;
+    case "torn_down":
+      setCheck("chk-teardown", "done");
+      break;
     case "kept":
+      setCheck("chk-teardown", "done", "Kept in your account");
       logLine(`KEPT project ${msg.project_id} in your account — ${msg.url || "no public URL"}`, "text-emerald-400");
       break;
     case "complete":
@@ -251,6 +323,7 @@ const FINDING = {
 
 function renderCompatibility(report) {
   if (!report) return;
+  compatReport = report;
   const v = VERDICT[report.verdict] || VERDICT.needs_changes;
 
   $("compat-verdict").className = v.pill;
@@ -447,7 +520,11 @@ async function requestVerify() {
     const res = await fetch(`${API}/api/jobs/${currentJob}/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target, token: target === "account" ? token : null }),
+      body: JSON.stringify({
+        target,
+        token: target === "account" ? token : null,
+        acknowledge: (compatReport && compatReport.verdict) === "needs_changes",
+      }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

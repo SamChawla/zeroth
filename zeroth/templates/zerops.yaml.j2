@@ -20,10 +20,19 @@
 zerops:
 {% for svc in manifest.services %}
 {% if svc.role in ('api', 'web', 'worker') %}
+{# os is ubuntu for real runtimes, not alpine. Alpine is musl, so any dependency
+   without a musl wheel (numpy, pandas, pyarrow - i.e. most of the data and ML
+   ecosystem) falls back to compiling from source and the deploy dies with no
+   useful error. Confirmed against a real Streamlit deploy that failed on alpine.
+   Zeroth's own zerops.yaml reaches the same conclusion: ubuntu for the Python
+   services, alpine only for the static file server that installs nothing.
+   build.os and run.os must also match, or wheels built against one libc are
+   reinstalled against the other. #}
+{% set svc_os = 'alpine' if svc.type == 'static' else 'ubuntu' %}
   - setup: {{ svc.hostname }}
     build:
       base: {{ 'nodejs@latest' if svc.type == 'static' else svc.type }}
-      os: alpine
+      os: {{ svc_os }}
       buildCommands:
 {% for cmd in svc.build_commands or ['echo "no build step detected"'] %}
         - {{ cmd }}
@@ -43,6 +52,7 @@ zerops:
 {% endif %}
     run:
       base: {{ svc.type }}
+      os: {{ svc_os }}
 {% if svc.public %}
       ports:
         - port: {{ svc.port or (8080 if svc.type == 'static' else 8000) }}
@@ -50,9 +60,22 @@ zerops:
 {% endif %}
 {% if svc.type != 'static' %}
       prepareCommands:
+{# prepareCommands run as a non-root user in a container where /var/www is still
+   empty, and the run image already ships its own copies of some packages. Bare
+   `pip install -r requirements.txt` therefore fails two ways: the file is not
+   where the build left it, and pre-installed packages block the install.
+   `python3 -m pip ... --ignore-installed` against the addToRunPrepare copy is
+   the form confirmed working - it is what Zeroth's own zerops.yaml had to
+   settle on after the same failure. #}
+{% if svc.type.startswith('python') %}
+        - python3 -m pip install --ignore-installed -r requirements.txt
+{% elif svc.type.startswith('nodejs') %}
+        - npm install --omit=dev
+{% else %}
 {% for cmd in svc.build_commands or ['echo "no dependencies to install"'] %}
         - {{ cmd }}
 {% endfor %}
+{% endif %}
       start: {{ svc.start_command }}
 {% endif %}
 {% endif %}

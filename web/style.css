@@ -244,3 +244,6 @@ body, .card, .nav, .surface-panel {
   background: rgb(var(--accent) / 0.06);
 }
 .choice input:focus-visible + .choice-body { box-shadow: 0 0 0 3px rgb(var(--accent) / 0.2); }
+
+/* Utility classes set display:flex here, so the hidden state needs to win. */
+#tryout-verdict.hidden { display: none; }

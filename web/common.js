@@ -20,7 +20,7 @@ const THEMES = ["light", "dark", "system"];
 
 function storedTheme() {
   const value = localStorage.getItem(THEME_KEY);
-  return THEMES.includes(value) ? value : "system";
+  return THEMES.includes(value) ? value : "dark";
 }
 
 function systemTheme() {
@@ -92,6 +92,15 @@ async function loadGallery(targetId = "gallery", emptyId = "gallery-empty") {
   }
 }
 
+function ago(iso) {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const steps = [[86400, "d"], [3600, "h"], [60, "m"]];
+  for (const [size, unit] of steps) {
+    if (seconds >= size) return `${Math.floor(seconds / size)}${unit} ago`;
+  }
+  return "just now";
+}
+
 function galleryRow(j) {
   const status = j.verified
     ? '<span class="pill pill-verified"><span class="dot bg-success"></span> Verified</span>'
@@ -110,6 +119,7 @@ function galleryRow(j) {
       <td class="py-3 pr-4 text-sm text-fg2 hidden sm:table-cell">${escape(j.framework || "unknown")}</td>
       <td class="py-3 pr-4 hidden lg:table-cell">${services}</td>
       <td class="py-3 pr-4 text-sm text-fg2 hidden md:table-cell">${j.attempts} attempt${j.attempts === 1 ? "" : "s"}${j.repaired ? " · repaired" : ""}</td>
+      <td class="py-3 pr-4 text-sm text-fg3 hidden md:table-cell whitespace-nowrap">${escape(ago(j.created_at))}</td>
       <td class="py-3 text-right">
         <a class="text-sm text-accent hover:underline" href="run.html?job=${encodeURIComponent(j.id)}">View</a>
       </td>

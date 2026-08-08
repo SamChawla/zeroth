@@ -5,11 +5,11 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>How it works — Zeroth</title>
 <meta name="description" content="The Zeroth pipeline, its three failure classes, the services it runs on, and the safety guards around them."/>
-<meta name="theme-color" content="#F8FAFC"/>
+<meta name="theme-color" content="#09090B"/>
 <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
 <script>
   (function () {
-    var pref = localStorage.getItem("zeroth-theme") || "system";
+    var pref = localStorage.getItem("zeroth-theme") || "dark";
     var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
   })();

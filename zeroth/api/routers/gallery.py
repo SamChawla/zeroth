@@ -6,6 +6,10 @@ from zeroth.models import Job
 
 router = APIRouter(prefix="/api", tags=["gallery"])
 
+# Kept short deliberately: this is a showcase, not a log. Testing generates runs
+# quickly and a wall of them buries the ones worth looking at.
+GALLERY_SIZE = 3
+
 
 @router.get("/gallery")
 def gallery(db: Session = Depends(get_session)):
@@ -18,7 +22,7 @@ def gallery(db: Session = Depends(get_session)):
         db.query(Job)
         .filter(Job.status.in_(["done", "failed"]))
         .order_by(Job.is_gallery.desc(), Job.created_at.desc())
-        .limit(12)
+        .limit(GALLERY_SIZE)
         .all()
     )
     return [

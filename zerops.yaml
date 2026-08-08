@@ -1,5 +1,11 @@
 # Zeroth itself. Three setups, one repository.
 zerops:
+  # Per Zerops' own Python build-pipeline docs: build and run are separate
+  # containers. deployFiles lands in /var/www at runtime, which is NOT
+  # where run.prepareCommands executes - prepareCommands needs its own
+  # copy of requirements.txt, bridged across via addToRunPrepare. Build-
+  # time pip installs do not carry over; prepareCommands reinstalls with
+  # --ignore-installed, matching the documented pattern exactly.
   - setup: api
     build:
       base: python@3.12
@@ -7,6 +13,8 @@ zerops:
       buildCommands:
         - pip install -r requirements.txt
       deployFiles: ./
+      addToRunPrepare:
+        - requirements.txt
     run:
       base: python@3.12
       os: ubuntu
@@ -14,7 +22,7 @@ zerops:
         - port: 8000
           httpSupport: true
       prepareCommands:
-        - pip install -r requirements.txt
+        - python3 -m pip install --ignore-installed -r requirements.txt
       start: uvicorn zeroth.api.main:app --host 0.0.0.0 --port 8000
 
   - setup: worker
@@ -24,12 +32,18 @@ zerops:
       buildCommands:
         - pip install -r requirements.txt
       deployFiles: ./
+      addToRunPrepare:
+        - requirements.txt
     run:
       base: python@3.12
       os: ubuntu
+      # apt-get needs root; prepareCommands run as a non-root user and it
+      # fails with Permission denied on /var/lib/apt/lists/partial
+      # regardless of OS. Dropping git for now - ingest.clone() only needs
+      # it once a real job runs, not at startup; revisit if that's a real
+      # base-image gap once the worker is actually up.
       prepareCommands:
-        - apt-get update && apt-get install -y git
-        - pip install -r requirements.txt
+        - python3 -m pip install --ignore-installed -r requirements.txt
       start: python -m zeroth.worker.main
 
   # "static" as a Zerops run base is under-documented and 502'd with zero

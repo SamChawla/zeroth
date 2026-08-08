@@ -55,13 +55,60 @@ class Compatibility:
     verdict: str
     headline: str
     findings: list[Finding] = field(default_factory=list)
+    fix_prompt: str = ""
 
     def to_dict(self) -> dict:
         return {
             "verdict": self.verdict,
             "headline": self.headline,
             "findings": [asdict(f) for f in self.findings],
+            "fix_prompt": self.fix_prompt,
         }
+
+
+def build_fix_prompt(report: "Compatibility", facts: dict) -> str:
+    """A prompt the user can hand to their own coding agent.
+
+    Zeroth deliberately does not edit anyone's repository. It can see exactly
+    what is wrong and say so precisely, which is the useful part; making the
+    change is the owner's call, in their repo, under their review. Handing over
+    the instructions is the honest middle ground between "here is a problem,
+    good luck" and opening a pull request nobody asked for.
+    """
+    actionable = [f for f in report.findings if f.level in ("blocker", "change")]
+    if not actionable:
+        return ""
+
+    stack = " ".join(x for x in (facts.get("language"), facts.get("runtime_version")) if x)
+    lines = [
+        "I want this repository to deploy on Zerops. A deployability check found "
+        "the issues below. Please fix them in the repository.",
+        "",
+        f"Repository: {facts.get('repo_name') or 'this repository'}",
+        f"Detected stack: {stack or 'unknown'}",
+        "",
+        "Issues to fix:",
+        "",
+    ]
+    for i, f in enumerate(actionable, 1):
+        lines.append(f"{i}. {f.title}")
+        lines.append(f"   {f.detail}")
+        if f.evidence:
+            lines.append(f"   Evidence: {f.evidence}")
+        lines.append("")
+
+    lines += [
+        "Constraints:",
+        "- Do not invent dependencies or services the repository does not already use.",
+        "- The application must bind 0.0.0.0, not localhost, and read its port from "
+        "the environment where possible.",
+        "- Any database or cache connection must come from an environment variable, "
+        "not a hardcoded host: Zerops supplies one per service.",
+        "- Keep the changes minimal and explain each one.",
+        "",
+        "When you are done, I will run the repository through the check again.",
+    ]
+    return "\n".join(lines)
 
 
 def assess(fp) -> Compatibility:
@@ -82,7 +129,10 @@ def assess(fp) -> Compatibility:
             "to deploy it onto.",
             "detected language",
         ))
-        return Compatibility("unsupported", f"Not deployable — {language} is not a Zerops runtime", findings)
+        report = Compatibility(
+            "unsupported", f"Not deployable — {language} is not a Zerops runtime", findings)
+        report.fix_prompt = build_fix_prompt(report, facts)
+        return report
 
     _check_runtime_version(findings, facts, base)
     _check_dependency_manifest(findings, base, present)
@@ -91,7 +141,9 @@ def assess(fp) -> Compatibility:
     _check_backing_services(findings, facts)
     _check_containerisation(findings, present)
 
-    return _verdict(findings, base, facts)
+    report = _verdict(findings, base, facts)
+    report.fix_prompt = build_fix_prompt(report, facts)
+    return report
 
 
 def _check_runtime_version(findings, facts, base) -> None:

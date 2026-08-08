@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     pathfinder_provider: str = "simulated"  # simulated | zcli
     zeroth_public_url: str = "http://localhost:8000"
 
+    # Interactive API docs stay off in a deployed instance: the surface they
+    # publish includes the token-accepting verify endpoint.
+    expose_api_docs: bool = False
+
     max_repo_mb: int = 50
     # Verification is opt-in and someone is watching it happen, so it is tuned
     # for a bounded wait rather than maximum persistence: two attempts still

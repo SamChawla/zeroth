@@ -10,10 +10,18 @@ let compatReport = null;
 function logLine(text, cls = "text-zinc-400") {
   const el = $("terminal");
   if (!el) return;
-  const div = document.createElement("div");
-  div.className = cls;
-  div.textContent = text;
-  el.appendChild(div);
+  const row = document.createElement("div");
+  row.className = "flex gap-3";
+  const now = new Date();
+  const stamp = document.createElement("span");
+  stamp.className = "text-zinc-600 shrink-0 tabular-nums";
+  stamp.textContent = [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map((n) => String(n).padStart(2, "0")).join(":");
+  const body = document.createElement("span");
+  body.className = `${cls} min-w-0 break-words`;
+  body.textContent = text;
+  row.append(stamp, body);
+  el.appendChild(row);
   el.scrollTop = el.scrollHeight;
 }
 
@@ -121,6 +129,7 @@ function resetRun() {
   hide("tryout-err");
   hide("tryout-verdict");
   hide("compat");
+  hide("fixprompt");
   compatReport = null;
   resetChecks();
   setStage("fingerprint", "pending", "Pending");
@@ -131,6 +140,13 @@ function resetRun() {
   $("live-dot").className = "dot bg-accent pulse";
   show("run");
   startClock();
+}
+
+function settleLog() {
+  const pill = $("log-live");
+  if (!pill) return;
+  pill.className = "pill pill-idle";
+  pill.textContent = "idle";
 }
 
 function fail(message) {
@@ -216,6 +232,7 @@ function handle(msg, jobId) {
       break;
     case "ready":
       stopClock();
+      settleLog();
       setStage("verify", "pending", "Not run");
       $("stage-verify-note").textContent =
         "Nothing has been provisioned. Start a verification to prove this configuration boots.";
@@ -282,6 +299,7 @@ function handle(msg, jobId) {
       break;
     case "complete":
       stopClock();
+      settleLog();
       hide("tryout");
       logLine(`DONE — verified=${msg.verified}`, msg.verified ? "text-emerald-400" : "text-amber-300");
       if (!msg.verified) setStage("verify", "failed", "Not verified");
@@ -348,6 +366,14 @@ function renderCompatibility(report) {
         </div>
       </div>`;
   }).join("");
+
+  const prompt = report.fix_prompt || "";
+  if (prompt) {
+    $("fixprompt-text").textContent = prompt;
+    show("fixprompt");
+  } else {
+    hide("fixprompt");
+  }
 
   show("compat");
 }
@@ -489,7 +515,34 @@ function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
 /* ---------- try it out ---------- */
 
 function showTryout() {
-  $("tryout-go").disabled = false;
+  // The verdict decides what is even on offer here. Presenting the same
+  // confident deploy button after the checker said it will fail is what made
+  // the deployability stage decorative.
+  const verdict = compatReport && compatReport.verdict;
+  const btn = $("tryout-go");
+  const note = $("tryout-verdict");
+  btn.disabled = false;
+  btn.classList.remove("btn-secondary");
+  btn.classList.add("btn-primary");
+
+  if (verdict === "unsupported") {
+    btn.disabled = true;
+    note.innerHTML = '<span class="material-symbols-outlined text-[17px] text-danger shrink-0">block</span>' +
+      "<span>There is no Zerops runtime for this stack, so there is nothing to deploy it onto.</span>";
+    show("tryout-verdict");
+  } else if (verdict === "needs_changes") {
+    const changes = (compatReport.findings || []).filter((f) => f.level === "change").length;
+    btn.classList.remove("btn-primary");
+    btn.classList.add("btn-secondary");
+    btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">play_arrow</span> Deploy anyway';
+    note.innerHTML = '<span class="material-symbols-outlined text-[17px] text-warning shrink-0">build</span>' +
+      `<span>The check found ${changes} change${changes === 1 ? "" : "s"} above that will most likely make this fail. ` +
+      "Fixing them first is cheaper than watching it break.</span>";
+    show("tryout-verdict");
+  } else {
+    btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">play_arrow</span> Try it out';
+    hide("tryout-verdict");
+  }
   show("tryout");
 }
 
@@ -553,6 +606,26 @@ function initTryout() {
     });
   });
   $("tryout-go").addEventListener("click", requestVerify);
+
+  $("fixprompt-toggle").addEventListener("click", (e) => {
+    const pre = $("fixprompt-text");
+    const open = pre.classList.toggle("hidden");
+    e.currentTarget.innerHTML = open
+      ? '<span class="material-symbols-outlined text-[15px]">visibility</span> Show'
+      : '<span class="material-symbols-outlined text-[15px]">visibility_off</span> Hide';
+  });
+
+  $("fixprompt-copy").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const original = btn.innerHTML;
+    try {
+      await navigator.clipboard.writeText($("fixprompt-text").textContent || "");
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">check</span> Copied';
+    } catch {
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">close</span> Failed';
+    }
+    setTimeout(() => { btn.innerHTML = original; }, 1600);
+  });
 }
 
 /* ---------- config tabs ---------- */
@@ -638,6 +711,9 @@ function hydrate(job) {
     }
   });
 
+  // A replayed run has no live stream, so say that rather than showing an
+  // empty console that reads as broken.
+  logLine(`[replay] ${job.repo_name || "run"} — finished, live events are not retained`, "text-zinc-500");
   if (job.status === "ready") {
     setStage("verify", "pending", "Not run");
     $("stage-verify-note").textContent =
@@ -657,6 +733,7 @@ function hydrate(job) {
 /* ---------- entry ---------- */
 
 async function init() {
+  loadGallery();
   initTabs();
   initTryout();
   const jobId = new URLSearchParams(location.search).get("job");

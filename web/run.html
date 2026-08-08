@@ -25,7 +25,7 @@
 <body class="font-sans antialiased min-h-screen flex flex-col">
 
 <nav class="nav fixed top-0 w-full z-50">
-  <div class="max-w-content mx-auto px-5 md:px-8 h-14 flex items-center justify-between gap-4">
+  <div class="max-w-workspace mx-auto px-5 md:px-8 h-14 flex items-center justify-between gap-4">
     <a href="index.html" class="flex items-center gap-2.5 shrink-0">
       <img src="favicon.svg" alt="" class="h-7 w-7"/>
       <span class="font-semibold tracking-tight">Zeroth</span>
@@ -48,7 +48,20 @@
 </nav>
 
 <main class="flex-grow pt-14">
-<div class="max-w-content mx-auto px-5 md:px-8 py-10 md:py-14 flex flex-col gap-6">
+<div class="max-w-workspace mx-auto px-5 md:px-8 py-8 md:py-10 flex flex-col gap-5">
+
+  <!-- Not built yet, and labelled as such. A disabled control is honest; a
+       working-looking one that quietly does nothing is not. -->
+  <aside class="card p-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <span class="pill pill-running">Coming soon</span>
+    <p class="text-sm text-fg2 flex-grow min-w-[16rem]">
+      <span class="text-fg font-medium">Private repositories.</span>
+      Analyse a private repo, or run the whole analysis privately, without the run appearing in the public showcase.
+    </p>
+    <button type="button" class="btn btn-secondary" disabled title="Not available yet">
+      <span class="material-symbols-outlined text-[18px]">lock</span> Analyze a private repo
+    </button>
+  </aside>
 
   <!-- Submit -->
   <section id="console-panel" class="card p-6 md:p-8">
@@ -69,6 +82,42 @@
     </form>
     <p class="text-sm text-fg2 mt-4">Public GitHub or GitLab, up to 50&nbsp;MB. Nothing from the repository executes during analysis.</p>
     <p class="text-sm text-danger mt-2 hidden" id="err" role="alert"></p>
+  </section>
+
+  <!-- The empty state used to be an input and a lot of nothing. Real previous
+       runs are both context and proof, and they cost one request already made. -->
+  <section id="recent" class="flex flex-col gap-3">
+    <div class="flex items-end justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold tracking-tight">Recent runs</h2>
+        <p class="text-sm text-fg2 mt-0.5">The last few repositories through the pipeline, with whatever result they got.</p>
+      </div>
+      <span class="font-mono text-xs text-fg3" id="gallery-summary"></span>
+    </div>
+
+    <div class="card overflow-hidden">
+      <div id="gallery-empty" class="p-8 text-center">
+        <div class="step-icon mx-auto mb-3"><span class="material-symbols-outlined text-[20px]">inbox</span></div>
+        <p class="font-medium mb-1">Nothing has run yet</p>
+        <p class="text-sm text-fg2">Analyse a repository above and it will appear here.</p>
+      </div>
+      <div id="gallery-table" class="hidden overflow-x-auto scroll-thin">
+        <table class="w-full text-left min-w-[560px]">
+          <thead>
+            <tr class="text-[11px] uppercase tracking-wider text-fg3">
+              <th class="font-medium py-3 px-5 pl-5">Repository</th>
+              <th class="font-medium py-3 pr-4">Status</th>
+              <th class="font-medium py-3 pr-4 hidden sm:table-cell">Framework</th>
+              <th class="font-medium py-3 pr-4 hidden lg:table-cell">Services</th>
+              <th class="font-medium py-3 pr-4 hidden md:table-cell">Attempts</th>
+              <th class="font-medium py-3 pr-4 hidden md:table-cell">When</th>
+              <th class="font-medium py-3 pr-5 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="gallery" class="[&>tr>td:first-child]:pl-5 [&>tr>td:last-child]:pr-5"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <p class="card p-4 text-sm text-fg2 hidden" id="viewing-note">
@@ -116,12 +165,34 @@
         </div>
       </div>
       <div class="flex flex-col gap-2.5 mt-4" id="compat-findings"></div>
+
+      <!-- Zeroth does not edit anyone's repository. It hands over the
+           instructions and the owner decides. -->
+      <div id="fixprompt" class="hidden mt-5 pt-5 border-t border-edge">
+        <div class="flex items-start justify-between gap-4 flex-wrap mb-3">
+          <div>
+            <h3 class="font-semibold mb-1">Fix these with your own agent</h3>
+            <p class="text-sm text-fg2 max-w-2xl">
+              Zeroth does not change your repository. Copy this prompt into Claude, Cursor or
+              whatever you use, apply the changes, then run the analysis again.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" id="fixprompt-toggle" class="btn btn-secondary !px-3 !py-1.5 text-xs">
+              <span class="material-symbols-outlined text-[15px]">visibility</span> Show
+            </button>
+            <button type="button" id="fixprompt-copy" class="btn btn-primary !px-3 !py-1.5 text-xs">
+              <span class="material-symbols-outlined text-[15px]">content_copy</span> Copy prompt
+            </button>
+          </div>
+        </div>
+        <pre id="fixprompt-text" class="hidden code-surface rounded-card p-4 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto scroll-thin"></pre>
+      </div>
     </section>
 
-    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-5 items-start">
 
-      <!-- Pipeline -->
-      <div class="lg:col-span-3 flex flex-col gap-4">
+      <div class="xl:col-span-3 flex flex-col gap-5">
 
         <section class="card p-6" id="stage-fingerprint">
           <div class="flex items-start justify-between gap-4 mb-4">
@@ -143,9 +214,11 @@
             <div class="check pending" id="chk-deployable"><span class="check-mark">○</span><span class="check-text text-sm">Deployability assessed</span></div>
             <div class="check pending" id="chk-config"><span class="check-mark">○</span><span class="check-text text-sm">Configuration generated</span></div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="evidence"></div>
+          <div class="grid grid-cols-1 gap-3" id="evidence"></div>
         </section>
+      </div>
 
+      <div class="xl:col-span-5 flex flex-col gap-5">
         <section class="card p-6" id="stage-reason">
           <div class="flex items-start justify-between gap-4 mb-4">
             <div class="flex gap-3.5">
@@ -159,7 +232,9 @@
           </div>
           <div id="services" class="flex flex-col gap-2.5"></div>
         </section>
+      </div>
 
+      <div class="xl:col-span-4 flex flex-col gap-5">
         <section class="card p-6" id="stage-verify">
           <div class="flex items-start justify-between gap-4 mb-4">
             <div class="flex gap-3.5">
@@ -182,20 +257,19 @@
           <div id="attempt-list" class="flex flex-col gap-3"></div>
         </section>
       </div>
-
-      <!-- Terminal -->
-      <div class="lg:col-span-2">
-        <section class="card overflow-hidden flex flex-col h-[520px] lg:sticky lg:top-20">
-          <div class="flex items-center justify-between px-4 py-2.5 border-b border-edge">
-            <div class="flex items-center gap-2 text-sm text-fg2">
-              <span class="material-symbols-outlined text-[16px]">terminal</span> Event log
-            </div>
-            <span class="pill pill-idle">live</span>
-          </div>
-          <div class="code-surface flex-grow overflow-y-auto scroll-thin p-4 font-mono text-[12.5px] leading-relaxed flex flex-col gap-1 border-0" id="terminal"></div>
-        </section>
-      </div>
     </div>
+
+    <!-- The log is how the run explains itself, so it is on screen for the whole
+         run rather than appearing with the results. -->
+    <section class="card overflow-hidden flex flex-col h-[420px]">
+      <div class="flex items-center justify-between px-4 py-2.5 border-b border-edge">
+        <div class="flex items-center gap-2 text-[11px] uppercase tracking-wider text-fg3">
+          <span class="material-symbols-outlined text-[16px]">terminal</span> Event log
+        </div>
+        <span class="pill pill-running" id="log-live"><span class="dot bg-accent pulse"></span> live</span>
+      </div>
+      <div class="code-surface flex-grow overflow-y-auto scroll-thin p-4 font-mono text-[12px] leading-relaxed flex flex-col gap-0.5 border-0" id="terminal"></div>
+    </section>
 
     <!-- Result banner -->
     <div id="result-banner" class="hidden card p-7 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6"></div>
@@ -255,8 +329,8 @@
     </section>
 
     <!-- Config + evidence -->
-    <div id="result-grid" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 flex flex-col gap-6">
+    <div id="result-grid" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="lg:col-span-2 flex flex-col gap-5">
         <section class="card overflow-hidden flex flex-col h-[460px]">
           <div class="flex items-center justify-between border-b border-edge pl-2 pr-3">
             <div class="flex">
@@ -303,7 +377,7 @@
 </main>
 
 <footer class="border-t border-edge mt-auto">
-  <div class="max-w-content mx-auto px-5 md:px-8 py-7 flex flex-col md:flex-row justify-between items-center gap-4">
+  <div class="max-w-workspace mx-auto px-5 md:px-8 py-7 flex flex-col md:flex-row justify-between items-center gap-4">
     <div class="text-sm text-fg3">© 2026 Zeroth · built on Zerops</div>
     <div class="flex gap-6 items-center text-sm">
       <a class="text-fg2 hover:text-fg transition-colors" href="about.html">How it works</a>

@@ -4,40 +4,48 @@ Shelling out to zcli is deliberate: it is the interface Zerops documents and
 keeps stable, and it avoids hand-rolling auth and polling against the REST API
 under a 48-hour clock.
 
-Flag names below are confirmed against `zcli <cmd> --help` (zcli 1.1.0,
-2026-08-08): project/service identifiers are `-P/--project-id` and
-`-S/--service-id` — NOT the `--projectId`/`--serviceId` this file guessed
-before that check. `project project-import` and `project delete` both take
-the id as a bare positional argument too; the flag form is used here for
-readability.
+Everything below is confirmed against a real project on a live account
+(zcli 1.1.0, 2026-08-08), not guessed from --help text:
 
-STILL SPIKE-DEPENDENT — confirmed command shapes are not the same as
-confirmed behavior. Run a real `project-import` before trusting this:
-  1. What does `project project-import` print on success, and does the id
-     regex below actually match it? (`create_project` — unverified guess.)
-  2. `buildFromGit` is a project-import YAML field, which strongly implies
-     Zerops clones and builds server-side once the project is created —
-     meaning `deploy()` doesn't need a `service push`/`deploy` step, only
-     polling. Not yet watched end-to-end.
-  3. `service log` needs `-S/--service-id` to mean anything once a project
-     has more than one service — ours always will (api/worker/web/db/cache).
-     `logs()`/`deploy()` below only look at the whole project; they need a
-     hostname→service-id map from `service list` output, which is still
-     unread.
-  4. Does `service list` output actually contain the literal strings
-     "failed"/"error"/"active"/"running" this file greps for?
-  5. Where does the live subdomain URL surface — `service list`, `project
-     env`, something else?
-  6. Does `project delete --confirm` free quota immediately?
+- Flags are `-P/--project-id` and `-S/--service-id`, not `--projectId`/
+  `--serviceId`.
+- zcli has no ZEROPS_TOKEN env-var auth. `zcli login <token>` makes an
+  authenticated call and persists a session file - that's the only way in.
+- `project project-import`'s stdout never contains the project id, only
+  per-service `stack.*` progress lines. The id has to be looked up
+  afterward via `project list`.
+- Import YAML's `buildFromGit` creates services but does NOT build them -
+  they sit at READY_TO_DEPLOY forever. `zcli service deploy <hostname>`
+  run against a *local* working directory (not the git URL) is what
+  actually triggers a build. This means deploy() needs a local clone with
+  zerops.yml written into it, not just project_id + zerops_yaml text.
+- `zcli service log` returned nothing (build or runtime, either
+  --message-type) across every real failure this file caused during
+  development - the useful signal is `service deploy`'s own stdout/stderr
+  and exit code, which log() below no longer relies on as the primary
+  source.
+- The live subdomain URL is `{hostname}_zeropsSubdomain` in
+  `zcli project env -P <id>` output, e.g.
+  `web_zeropsSubdomain="https://web-2b21-8080.prg1.zerops.app"`. Adding a
+  `ports` entry changes this URL (a port suffix gets added), so it must be
+  read after the deploy that declares the final port, not cached earlier.
+- Not yet confirmed: whether `project delete --confirm` frees quota
+  immediately, and the exact server-side reason a `service deploy` process
+  can fail (zcli's own client-side log has no more detail than "identifier
+  for communication with our support: <id>" - the Zerops GUI or support
+  channel has more than the CLI exposes here).
 """
 import re
 import subprocess
 import tempfile
-import time
 from pathlib import Path
+
+import yaml
 
 from zeroth.config import settings
 from zeroth.worker.providers.base import DeployResult
+
+ZEROPS_YAML_FILENAME = "zerops.yml"
 
 
 class ZcliError(Exception):
@@ -45,16 +53,6 @@ class ZcliError(Exception):
 
 
 class ZcliProvider:
-    """
-    Confirmed 2026-08-08: zcli has no ZEROPS_TOKEN env-var auth. `zcli login
-    <token>` makes an authenticated call and persists the session to a local
-    config file (cli.data) — that's the only way in. The old `_run()` passed
-    ZEROPS_TOKEN as a subprocess env var, which zcli never read, AND replaced
-    the entire environment (dropping HOME/PATH/etc, breaking zcli's ability to
-    find its own config dir). Fixed: `_ensure_login()` runs the real login
-    command once per process, and `_run()` no longer touches the environment.
-    """
-
     name = "zcli"
 
     def __init__(self) -> None:
@@ -74,54 +72,83 @@ class ZcliProvider:
             )
         self._logged_in = True
 
-    def _run(self, args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
+    def _run(self, args: list[str], timeout: int = 120, cwd: str | None = None) -> subprocess.CompletedProcess:
         self._ensure_login()
-        return subprocess.run(["zcli", *args], capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(["zcli", *args], capture_output=True, text=True, timeout=timeout, cwd=cwd)
 
     def create_project(self, import_yaml: str, project_name: str) -> str:
+        actual_name = (yaml.safe_load(import_yaml).get("project") or {}).get("name") or project_name
+
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
             fh.write(import_yaml)
             path = fh.name
 
-        proc = self._run(["project", "project-import", path], timeout=settings.provision_timeout_s)
-        Path(path).unlink(missing_ok=True)
+        try:
+            proc = self._run(["project", "project-import", path], timeout=settings.provision_timeout_s)
+        finally:
+            Path(path).unlink(missing_ok=True)
 
         if proc.returncode != 0:
             raise ZcliError(f"import failed: {proc.stderr.strip() or proc.stdout.strip()}")
 
-        # Project id shape is confirmed during the spike; adjust the pattern.
-        match = re.search(r"\b([A-Za-z0-9_-]{16,})\b", proc.stdout)
-        if not match:
-            raise ZcliError(f"could not parse project id from: {proc.stdout[:300]}")
-        return match.group(1)
+        return self._find_project_id(actual_name)
 
-    def deploy(self, project_id: str, repo_url: str, zerops_yaml: str) -> DeployResult:
-        """If Import YAML builds straight from git, this is a poll-only step.
-        Otherwise clone, write zerops.yaml into the tree, and `zcli service push`.
-        """
-        deadline = time.time() + settings.deploy_timeout_s
-        while time.time() < deadline:
-            proc = self._run(["service", "list", "--project-id", project_id], timeout=30)
-            output = proc.stdout.lower()
-            if "failed" in output or "error" in output:
-                logs = self.logs(project_id)
+    def _find_project_id(self, name: str) -> str:
+        proc = self._run(["project", "list"], timeout=30)
+        if proc.returncode != 0:
+            raise ZcliError(f"could not list projects: {proc.stderr.strip() or proc.stdout.strip()}")
+        for line in proc.stdout.splitlines():
+            if "│" not in line:
+                continue
+            cells = [c.strip() for c in line.split("│") if c.strip()]
+            if len(cells) >= 2 and cells[0] != "ID" and cells[1] == name:
+                return cells[0]
+        raise ZcliError(f"created project '{name}' but could not find its id in `zcli project list`")
+
+    def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str) -> DeployResult:
+        (repo_dir / ZEROPS_YAML_FILENAME).write_text(zerops_yaml, encoding="utf-8")
+
+        setups = [svc["setup"] for svc in (yaml.safe_load(zerops_yaml).get("zerops") or [])]
+        if not setups:
+            return DeployResult(
+                ok=False, phase="schema", project_id=project_id,
+                error="zerops.yml has no setups to deploy",
+            )
+
+        log_chunks = []
+        for setup in setups:
+            proc = self._run(
+                ["service", "deploy", setup, "-P", project_id, "--setup", setup,
+                 "--working-dir", str(repo_dir)],
+                timeout=settings.deploy_timeout_s,
+            )
+            log_chunks.append(f"--- {setup} ---\n{proc.stdout}\n{proc.stderr}")
+            if proc.returncode != 0:
+                combined = "\n".join(log_chunks)
                 return DeployResult(
                     ok=False, phase="runtime", project_id=project_id,
-                    logs=logs, error=_first_error(logs) or "deployment reported failure",
+                    logs=combined[-8000:],
+                    error=_first_error(proc.stdout + proc.stderr) or f"{setup} deploy failed",
                 )
-            if "active" in output or "running" in output:
-                return DeployResult(
-                    ok=True, phase="runtime", project_id=project_id,
-                    logs=self.logs(project_id), verification=self.verify(project_id),
-                )
-            time.sleep(5)
 
-        # Circuit breaker: never let a hung deploy hold a worker slot.
+        combined = "\n".join(log_chunks)
+        url = self._public_url(project_id, setups)
         return DeployResult(
-            ok=False, phase="timeout", project_id=project_id,
-            logs=self.logs(project_id),
-            error=f"deployment did not settle within {settings.deploy_timeout_s}s",
+            ok=True, phase="runtime", project_id=project_id,
+            logs=combined[-8000:], url=url,
+            verification={"source": "zcli", "deployed_setups": setups, "url": url},
         )
+
+    def _public_url(self, project_id: str, setups: list[str]) -> str:
+        proc = self._run(["project", "env", "-P", project_id], timeout=30)
+        if proc.returncode != 0:
+            return ""
+        for line in proc.stdout.splitlines():
+            for setup in setups:
+                prefix = f"{setup}_zeropsSubdomain="
+                if line.startswith(prefix):
+                    return line[len(prefix):].strip().strip('"')
+        return ""
 
     def logs(self, project_id: str, service: str = "") -> str:
         args = ["service", "log", "--project-id", project_id, "--limit", "200"]

@@ -40,7 +40,7 @@ class PathfinderResult:
     live_url: str = ""
 
 
-def run(job_id: str, repo_url: str, manifest: dict, on_event) -> PathfinderResult:
+def run(job_id: str, repo_url: str, repo_dir, manifest: dict, on_event) -> PathfinderResult:
     provider = get_provider()
     attempts: list[Attempt] = []
     current = manifest
@@ -64,7 +64,7 @@ def run(job_id: str, repo_url: str, manifest: dict, on_event) -> PathfinderResul
 
             on_event("stage", {"stage": "deploying", "attempt": attempt_no,
                                "project_id": project_id})
-            result = provider.deploy(project_id, repo_url, zerops_yaml)
+            result = provider.deploy(project_id, repo_dir, zerops_yaml)
 
             if result.ok:
                 live_url = result.url

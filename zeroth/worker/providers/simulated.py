@@ -19,7 +19,7 @@ class SimulatedProvider:
         time.sleep(0.4)
         return f"sim-{project_name}"
 
-    def deploy(self, project_id: str, repo_url: str, zerops_yaml: str) -> DeployResult:
+    def deploy(self, project_id: str, repo_dir, zerops_yaml: str) -> DeployResult:
         time.sleep(0.8)
         n = self._attempts.get(project_id, 0) + 1
         self._attempts[project_id] = n

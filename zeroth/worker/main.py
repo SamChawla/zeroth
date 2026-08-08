@@ -78,7 +78,7 @@ def process(job_id: str) -> None:
             if slot:
                 _set_status(db, job, "verifying", "Sending a pathfinder run")
                 result = pathfinder.run(
-                    job.id, job.repo_url, manifest,
+                    job.id, job.repo_url, repo_dir, manifest,
                     lambda ev, payload: bus.publish(job.id, ev, payload),
                 )
                 verified = result.verified

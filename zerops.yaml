@@ -8,8 +8,6 @@ zerops:
         - pip install uv
         - uv pip install --system -r requirements.txt
       deployFiles: ./
-      cache:
-        - ~/.cache/uv
     run:
       base: python@3.12
       ports:
@@ -28,8 +26,6 @@ zerops:
         - pip install uv
         - uv pip install --system -r requirements.txt
       deployFiles: ./
-      cache:
-        - ~/.cache/uv
     run:
       base: python@3.12
       prepareCommands:

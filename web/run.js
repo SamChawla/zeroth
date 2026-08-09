@@ -643,7 +643,8 @@ function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
     : keptProjectId
       ? `<p class="text-sm text-fg2 mt-2.5">Left running in your account as project <span class="font-mono">${escape(keptProjectId)}</span>.</p>`
       : verified
-        ? '<p class="text-sm text-fg2 mt-2.5">The throwaway project has been destroyed, as designed.</p>'
+        ? `<p class="text-sm text-fg2 mt-2.5">It answered${liveUrl ? ` at <span class="font-mono">${escape(liveUrl)}</span>` : ""} —
+           then the throwaway project was destroyed, as designed. The evidence is the trail, not a live link.</p>`
         : "";
 
   banner.innerHTML = `
@@ -669,7 +670,7 @@ function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
       </div>
     </div>
     <div class="flex flex-col gap-2.5 shrink-0">
-      ${proven && liveUrl
+      ${proven && liveUrl && keptProjectId
         ? `<a href="${escape(liveUrl)}" target="_blank" rel="noopener" class="btn btn-primary">
              <span class="material-symbols-outlined text-[18px]">open_in_new</span> View deployment
            </a>` : ""}
@@ -953,6 +954,14 @@ function hydrate(job) {
   if (job.fingerprint) {
     renderEvidence(job.fingerprint);
     setStage("fingerprint", "complete", "Complete");
+    setCheck("chk-fetch", "done");
+    setCheck("chk-structure", "done");
+    const runtime = [job.fingerprint.language, job.fingerprint.runtime_version].filter(Boolean).join(" ");
+    setCheck("chk-runtime", "done", runtime ? `Runtime detected: ${runtime}` : undefined);
+  }
+  if (job.compatibility) {
+    setCheck("chk-deployable", job.compatibility.verdict === "unsupported" ? "failed" : "done",
+             job.compatibility.headline || undefined);
   }
   if (job.manifest) {
     renderServices(job.manifest);
@@ -960,6 +969,22 @@ function hydrate(job) {
   }
 
   const artifact = (kind) => (job.artifacts || []).find((a) => a.kind === kind);
+  if (artifact("zerops_yaml")) setCheck("chk-config", "done");
+  // Deployment checklist from the stored attempts: a passing attempt means the
+  // project existed, the app deployed, booted and answered; a settled
+  // ephemeral run was torn down - that is the teardown guarantee.
+  if ((job.runs || []).some((r) => r.status === "passed")) {
+    show("checklist-verify");
+    ["chk-project", "chk-deploy", "chk-boot", "chk-health"].forEach((id) => setCheck(id, "done"));
+    if (job.kept_project_id) setCheck("chk-teardown", "done", "Kept in your account");
+    else if (job.status === "done") setCheck("chk-teardown", "done");
+  } else if ((job.runs || []).length && job.status === "done") {
+    show("checklist-verify");
+    setCheck("chk-project", "done");
+    setCheck("chk-deploy", "done");
+    setCheck("chk-boot", "failed");
+    if (job.verify_target !== "account") setCheck("chk-teardown", "done");
+  }
   hasOwnConfig = !!artifact("repo_zerops_yaml");
   hasOfficial = !!artifact("official_zerops_yaml");
   const importYaml = artifact("import_yaml");

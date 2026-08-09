@@ -51,11 +51,14 @@ def normalise(repo_url: str) -> tuple[str, str, str]:
 
 def preflight_size(owner: str, repo: str) -> None:
     """Check repo size before cloning. A 4GB repo would kill the worker."""
+    headers = {"Accept": "application/vnd.github+json"}
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
     try:
         resp = httpx.get(
             f"https://api.github.com/repos/{owner}/{repo}",
             timeout=10,
-            headers={"Accept": "application/vnd.github+json"},
+            headers=headers,
         )
     except httpx.HTTPError:
         return  # GitLab or API hiccup: fall through to the clone-time guard.

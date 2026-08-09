@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # are exempt: the key's owner decides when it is exhausted.
     llm_token_budget: int = 60_000
 
+    # Optional. The size preflight calls api.github.com, which allows 60
+    # unauthenticated requests an hour - exhausted in one busy afternoon,
+    # after which oversized repos slip through to the clone guard. A token
+    # raises that to 5,000.
+    github_token: str = ""
+
     max_repo_mb: int = 50
     # Verification is opt-in and someone is watching it happen, so it is tuned
     # for a bounded wait rather than maximum persistence: two attempts still

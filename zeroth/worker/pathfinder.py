@@ -171,6 +171,11 @@ def run(
         )
         project_id = ""
         started = time.time()
+        # Wire the provider's slow phases into the run's event stream so the
+        # UI never sits silent through a multi-minute build or probe.
+        if hasattr(provider, "on_progress"):
+            provider.on_progress = (
+                lambda text, n=attempt_no: on_event("stage", {"stage": text, "attempt": n}))
 
         try:
             # Verifying the repository's own configuration means deploying it

@@ -249,11 +249,46 @@ function fail(message) {
 
 /* ---------- live event stream ---------- */
 
+let lastMsgAt = 0;
+let watchdog = null;
+
+function startWatchdog(jobId) {
+  if (watchdog) clearInterval(watchdog);
+  lastMsgAt = Date.now();
+  watchdog = setInterval(async () => {
+    if (Date.now() - lastMsgAt < 45_000) return;
+    try {
+      const job = await (await fetch(`${API}/api/jobs/${jobId}`)).json();
+      if (["done", "failed", "ready"].includes(job.status)) {
+        // The stream died and the run settled without us: rebuild from the
+        // record, which is authoritative anyway.
+        clearInterval(watchdog);
+        location.reload();
+        return;
+      }
+      // Still running - surface the newest persisted events the stream missed.
+      const events = job.events || [];
+      if (events.length > timelineCount) {
+        events.slice(timelineCount).forEach((e) =>
+          addTimelineRow(e.event, e.payload || {}, new Date(e.at).getTime()));
+        const latest = events[events.length - 1];
+        if (latest.event === "stage" && latest.payload) {
+          $("stage-verify-note").textContent = latest.payload.stage || "";
+        }
+        logLine("[reconnect] stream quiet — showing persisted progress", "text-zinc-500");
+      }
+      lastMsgAt = Date.now();  // don't hammer the API while quiet
+    } catch { /* transient; try again next tick */ }
+  }, 15_000);
+}
+
 function listen(jobId) {
   if (source) source.close();
+  startWatchdog(jobId);
   source = new EventSource(`${API}/api/jobs/${jobId}/events`);
 
   source.addEventListener("close", () => {
+    if (watchdog) clearInterval(watchdog);
     source.close();
     source = null;
     if ($("go")) $("go").disabled = false;
@@ -261,6 +296,7 @@ function listen(jobId) {
   });
 
   source.onmessage = (ev) => {
+    lastMsgAt = Date.now();
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
     handle(msg, jobId);
@@ -360,13 +396,24 @@ function handle(msg, jobId) {
       addAttempt(msg.attempt, msg.provider);
       logLine(`> attempt ${msg.attempt} — provisioning via ${msg.provider}`, "text-indigo-300");
       break;
-    case "stage":
-      if (msg.stage === "provisioning") setCheck("chk-project", "active");
-      if (msg.stage === "deploying") { setCheck("chk-project", "done"); setCheck("chk-deploy", "active"); }
-      if (msg.stage === "diagnosing") abandonChecks(VERIFY_CHECKS);
-      logLine(`  ${msg.stage}… (attempt ${msg.attempt})`);
-      appendAttempt(msg.attempt, `<div class="text-sm text-fg2 flex items-center gap-2"><span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>${escape(msg.stage)}…</div>`);
+    case "stage": {
+      const st = String(msg.stage || "");
+      if (st === "provisioning" || st.startsWith("importing")) setCheck("chk-project", "active");
+      if (st === "deploying" || st.startsWith("building and deploying")) {
+        setCheck("chk-project", "done"); setCheck("chk-deploy", "active");
+      }
+      if (st.startsWith("deployed — waiting") || st.startsWith("still waiting")) {
+        setCheck("chk-deploy", "done"); setCheck("chk-boot", "active");
+      }
+      if (st.startsWith("no answer within")) setCheck("chk-boot", "failed");
+      if (st === "diagnosing") abandonChecks(VERIFY_CHECKS);
+      // The current sub-phase is the answer to "where is it?" - keep it in the
+      // deployment card, not just the log.
+      $("stage-verify-note").textContent = st;
+      logLine(`  ${st} (attempt ${msg.attempt})`);
+      appendAttempt(msg.attempt, `<div class="text-sm text-fg2 flex items-center gap-2"><span class="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>${escape(st)}…</div>`);
       break;
+    }
     case "attempt_failed":
       abandonChecks(VERIFY_CHECKS);
       logLine(`FAIL attempt ${msg.attempt}: ${msg.failure_class} — ${msg.error || ""}`, "text-red-400");

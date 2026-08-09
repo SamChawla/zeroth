@@ -68,6 +68,20 @@ class ZcliProvider:
 
     name = "zcli"
 
+    # Optional progress callback set by the caller (pathfinder wires it to the
+    # run's event stream). Long blocking phases announce themselves before
+    # starting, and the probe loop heartbeats - ten silent minutes reads as a
+    # hang no matter how healthy the run is.
+    on_progress = None
+
+    def _progress(self, text: str) -> None:
+        cb = self.on_progress
+        if cb:
+            try:
+                cb(text)
+            except Exception:  # noqa: BLE001 - progress must never break the run
+                pass
+
     def __init__(self, token: str | None = None) -> None:
         self._token = token or settings.zcli_token
         self._own_account = not token
@@ -147,6 +161,7 @@ class ZcliProvider:
         if "buildFromGit" in import_yaml:
             budget = max(budget, settings.deploy_timeout_s)
 
+        self._progress(f"importing the project — can take up to {budget}s under load")
         try:
             proc = self._run(["project", "project-import", path], timeout=budget)
         except subprocess.TimeoutExpired:
@@ -242,6 +257,9 @@ class ZcliProvider:
 
         log_chunks = []
         for service, setup in targets:
+            self._progress(
+                f"building and deploying {service} — the platform build runs now "
+                f"(up to {settings.deploy_timeout_s}s)")
             proc = self._run(
                 ["push", service, "-P", project_id, "--setup", setup,
                  "--workingDir", str(repo_dir)],
@@ -303,7 +321,10 @@ class ZcliProvider:
                 error="the import finished but no public URL exists for the runtime service",
             )
 
+        self._progress("deployed — waiting for the application to answer")
         last = "no response"
+        started = time.time()
+        next_beat = started + 30
         # Boot + LB registration. 180s was calibrated on a quiet platform;
         # under load a fresh container can take minutes to route, and giving
         # up early misreports a healthy app as a failed one.
@@ -340,7 +361,13 @@ class ZcliProvider:
                 last = f"HTTP {resp.status_code}"
             except httpx.HTTPError as exc:
                 last = str(exc)[:200]
+            if time.time() >= next_beat:
+                elapsed = int(time.time() - started)
+                self._progress(
+                    f"still waiting for the application to answer — {elapsed}s, last: {last}")
+                next_beat += 30
             time.sleep(10)
+        self._progress("no answer within the window — collecting runtime logs for diagnosis")
         return DeployResult(
             ok=False, phase="runtime", project_id=project_id, url=url,
             error=f"the application never answered at {url} ({last})",

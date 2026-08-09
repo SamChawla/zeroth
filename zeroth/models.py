@@ -104,6 +104,9 @@ class Run(Base):
     failure_message: Mapped[str] = mapped_column(Text, default="")
     diagnosis: Mapped[str] = mapped_column(Text, default="")
     patch_summary: Mapped[str] = mapped_column(Text, default="")
+    # Unified diff of the manifest the repair changed - the visible proof of
+    # what the model did, not a prose summary of it.
+    patch_diff: Mapped[str] = mapped_column(Text, default="")
     zerops_project_id: Mapped[str] = mapped_column(String(100), default="")
     build_log: Mapped[str] = mapped_column(Text, default="")
     verification: Mapped[dict | None] = mapped_column(JSON, nullable=True)

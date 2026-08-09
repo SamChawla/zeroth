@@ -70,6 +70,10 @@ class Fingerprint:
     dependencies: list[str] = field(default_factory=list)
     compose_services: list[str] = field(default_factory=list)
     present_files: list[str] = field(default_factory=list)
+    # GET-able, parameter-free paths found in the sources. The verification
+    # probe hits each after deploy: application-level checks, not just "the
+    # port answers".
+    routes: list[str] = field(default_factory=list)
     # Set when the application does not live at the repository root but in a
     # single subdirectory (repo/blogWebsite/manage.py and nothing at the top).
     # Deploys use this as the working directory.
@@ -245,12 +249,40 @@ def build(repo_dir: Path, repo_name: str) -> Fingerprint:
     _detect_procfile(repo_dir, root_files, fp)
     _apply_dependency_signals(fp)
     _detect_library(repo_dir, root_files, fp)
+    _detect_routes(repo_dir, fp)
 
     if not fp.ports:
         fp.ports = [8000 if fp.language == "python" else 3000]
         fp.add("port", str(fp.ports[0]), "default for detected runtime")
 
     return fp
+
+
+# Decorator/registration patterns that declare a GET route with a literal,
+# parameter-free path. Deliberately conservative: a route we misread becomes a
+# failing "verification" of something the app never promised.
+_ROUTE_PATTERNS = (
+    re.compile(r"""@\w+\.(?:route|get)\(\s*["'](/[\w\-/]*)["']"""),          # flask / fastapi
+    re.compile(r"""\b\w+\.get\(\s*["'](/[\w\-/]*)["']"""),                  # express / hono
+)
+
+
+def _detect_routes(repo_dir: Path, fp: Fingerprint) -> None:
+    routes: list[str] = []
+    try:
+        candidates = sorted(repo_dir.glob("*.py")) + sorted(repo_dir.glob("*.js")) \
+            + sorted(repo_dir.glob("src/*.py")) + sorted(repo_dir.glob("src/*.js"))
+    except OSError:
+        return
+    for path in candidates[:20]:
+        text = _read(path)
+        for pattern in _ROUTE_PATTERNS:
+            for match in pattern.findall(text):
+                if "{" in match or "<" in match or match in routes:
+                    continue
+                routes.append(match)
+                fp.add("route", match, f"declared in {path.name}")
+    fp.routes = routes[:5]
 
 
 def _detect_library(repo_dir: Path, root_files: set[str], fp: Fingerprint) -> None:

@@ -234,9 +234,16 @@
             <button type="button" id="fixprompt-copy" class="btn btn-primary !px-3 !py-1.5 text-xs">
               <span class="material-symbols-outlined text-[15px]">content_copy</span> Copy prompt
             </button>
+            <button type="button" id="codefix-go" class="btn btn-secondary !px-3 !py-1.5 text-xs"
+                    title="Lets the model read only the files named in the findings">
+              <span class="material-symbols-outlined text-[15px]">auto_fix_high</span> Draft the fix with AI
+            </button>
           </div>
         </div>
         <pre id="fixprompt-text" class="hidden code-surface rounded-card p-4 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto scroll-thin"></pre>
+        <p class="text-[12px] text-fg3 mt-2">"Draft the fix with AI" is the one step where the model reads code —
+          only the files the findings cite, on your request, and the result is a diff for you to apply. Zeroth never writes to your repository.</p>
+        <div id="codefix-result" class="hidden mt-3"></div>
       </div>
     </section>
 

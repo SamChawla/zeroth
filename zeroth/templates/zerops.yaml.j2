@@ -61,9 +61,13 @@ zerops:
         - {{ cmd }}
 {% endfor %}
 {% endif %}
-{% if r.run_env %}
+{% set run_env = dict(r.run_env, **(svc.env or {})) %}
+{% if run_env %}
+{# svc.env is what the REPAIR loop patches. Not rendering it meant every
+   env repair the model proposed was silently discarded - the diff showed a
+   fix and the redeploy shipped without it. #}
       envVariables:
-{% for k, v in r.run_env.items() %}
+{% for k, v in run_env.items() %}
         {{ k }}: {{ v }}
 {% endfor %}
 {% endif %}

@@ -9,6 +9,8 @@ Failure is classified into three levels:
   infrastructure the import was rejected
   runtime        it built but did not come up
 """
+import difflib
+import json as _json
 import time
 
 import yaml
@@ -20,6 +22,18 @@ from zeroth.worker.providers import get_provider
 from zeroth.worker.repair import classify, repair
 
 
+def manifest_diff(before: dict, after: dict) -> str:
+    """Unified diff of two manifests, as the evidence of what a repair did.
+
+    Diffed as pretty JSON rather than rendered YAML: the render can fail for
+    reasons unrelated to the repair, and the manifest IS what the model
+    patched.
+    """
+    a = _json.dumps(before, indent=2, sort_keys=True).splitlines(keepends=True)
+    b = _json.dumps(after, indent=2, sort_keys=True).splitlines(keepends=True)
+    return "".join(difflib.unified_diff(a, b, "manifest (before)", "manifest (after)", n=2))[:4000]
+
+
 @dataclass
 class Attempt:
     attempt_no: int
@@ -29,6 +43,7 @@ class Attempt:
     failure_message: str = ""
     diagnosis: str = ""
     patch_summary: str = ""
+    patch_diff: str = ""
     project_id: str = ""
     logs: str = ""
     verification: dict = field(default_factory=dict)
@@ -133,6 +148,7 @@ def run(
     keep_project: bool = False,
     zerops_yaml_override: str = "",
     import_yaml_override: str = "",
+    routes: list | None = None,
     framework: str = "",
 ) -> PathfinderResult:
     """Deploy the manifest, repairing on failure.
@@ -175,9 +191,9 @@ def run(
             if import_yaml_override and "buildFromGit" in import_yaml:
                 # The import already built and deployed from git. What is left
                 # to prove is that the application answers.
-                result = provider.await_git_build(project_id, [svc for svc, _ in targets])
+                result = provider.await_git_build(project_id, [svc for svc, _ in targets], routes=routes)
             else:
-                result = provider.deploy(project_id, repo_dir, zerops_yaml, targets=targets)
+                result = provider.deploy(project_id, repo_dir, zerops_yaml, targets=targets, routes=routes)
 
             if result.ok:
                 live_url = result.url
@@ -217,12 +233,14 @@ def run(
                     fix = repair(current, failure_class, result.error, result.logs)
                     attempt.diagnosis = fix["diagnosis"]
                     attempt.patch_summary = fix["patch_summary"]
+                    attempt.patch_diff = manifest_diff(current, fix["manifest"])
                     current = fix["manifest"]
                     on_event("repair_proposed", {
                         "attempt": attempt_no,
                         "diagnosis": fix["diagnosis"],
                         "patch_summary": fix["patch_summary"],
                         "confidence": fix["confidence"],
+                        "diff": attempt.patch_diff,
                     })
                 except Exception as exc:  # noqa: BLE001
                     attempt.diagnosis = f"repair failed: {exc}"

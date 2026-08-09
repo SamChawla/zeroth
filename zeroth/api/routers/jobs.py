@@ -76,6 +76,29 @@ def get_job(job_id: str, db: Session = Depends(get_session)):
     return job
 
 
+@router.post("/{job_id}/codefix", response_model=JobOut, status_code=202)
+def draft_code_fix(job_id: str, request: Request, db: Session = Depends(get_session)):
+    """Explicitly let the model read the finding-cited files and draft a patch.
+
+    This is the single exception to "no source code reaches the model", which
+    is why it is its own endpoint behind its own button rather than a side
+    effect of anything.
+    """
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "No job with that id.")
+    findings = (job.compatibility or {}).get("findings", [])
+    if not any(f.get("level") in ("blocker", "fatal", "change") for f in findings):
+        raise HTTPException(409, "There is nothing actionable to draft a fix for.")
+
+    ip = client_ip(request)
+    if bus.rate_limited(ip):
+        raise HTTPException(429, "You have hit the hourly limit. Try again later.")
+    bus.rate_consume(ip)
+    bus.enqueue(job.id, task="codefix")
+    return job
+
+
 @router.post("/{job_id}/verify", response_model=JobOut, status_code=202)
 def verify_job(
     job_id: str,

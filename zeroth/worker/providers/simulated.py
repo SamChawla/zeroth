@@ -23,7 +23,7 @@ class SimulatedProvider:
         time.sleep(0.4)
         return f"sim-{project_name}"
 
-    def deploy(self, project_id: str, repo_dir, zerops_yaml: str, targets=None) -> DeployResult:
+    def deploy(self, project_id: str, repo_dir, zerops_yaml: str, targets=None, routes=None) -> DeployResult:
         time.sleep(0.8)
         self._attempt += 1
 
@@ -52,7 +52,7 @@ class SimulatedProvider:
             verification={"http": 200, "health": "passed", "errors_in_log": 0},
         )
 
-    def await_git_build(self, project_id: str, services) -> DeployResult:
+    def await_git_build(self, project_id: str, services, routes=None) -> DeployResult:
         return self.deploy(project_id, None, "")
 
     def logs(self, project_id: str, service: str = "") -> str:

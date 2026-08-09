@@ -11,6 +11,7 @@ from zeroth.models import Artifact, Job, Run
 from zeroth.safety import RepoRejected, normalise, preflight_size
 from zeroth.worker import ingest, pathfinder
 from zeroth.worker.analyze import analyze
+from zeroth.worker import codefix
 from zeroth.worker.compatibility import assess
 from zeroth.worker.generate import check_constraints
 from zeroth.worker.recipes import fetch_official
@@ -200,6 +201,7 @@ def process_verify(job_id: str, target: str) -> None:
             zerops_yaml_override=override,
             import_yaml_override=import_override,
             framework=(job.fingerprint or {}).get("framework") or "",
+            routes=(job.fingerprint or {}).get("routes") or [],
         )
 
         # The connection may have died while the deploy ran; start clean
@@ -288,6 +290,39 @@ def _artifact(db, job: Job, kind: str) -> str:
     return row.content if row else ""
 
 
+def process_codefix(job_id: str) -> None:
+    """Draft a code patch for the findings, as an artifact. Opt-in only.
+
+    This is the one step where cited source files reach the model, which is
+    why it never runs on its own - the button that triggers it says so. The
+    output is a diff for the OWNER to apply; nothing is pushed anywhere.
+    """
+    db = SessionLocal()
+    repo_dir = None
+    llm.set_run_context(bus.get_llm(job_id))
+    try:
+        job = db.get(Job, job_id)
+        if not job or not job.compatibility:
+            return
+        events.record(job.id, "codefix_started", {})
+        clone_url, _, _ = normalise(job.repo_url)
+        repo_dir = ingest.clone(clone_url)
+        result = codefix.draft(repo_dir, job.fingerprint or {}, job.compatibility or {})
+        content = (result["explanation"] + "\n\n" + result["diff"]).strip()
+        _save(db, job, "code_fix", "zeroth-code-fix.diff", content)
+        events.record(job.id, "codefix_ready", {
+            "explanation": result["explanation"], "diff": result["diff"][:4000],
+        })
+    except Exception as exc:  # noqa: BLE001
+        log.exception("codefix for %s failed", job_id)
+        events.record(job_id, "codefix_failed", {"error": str(exc)[:300]})
+    finally:
+        llm.clear_run_context()
+        if repo_dir:
+            ingest.cleanup(repo_dir)
+        db.close()
+
+
 def _target_phrase(target: str) -> str:
     return "your Zerops account" if target == "account" else "a throwaway project"
 
@@ -365,6 +400,7 @@ def _persist_attempts(db, job: Job, attempts) -> None:
             job_id=job.id, attempt_no=a.attempt_no, status=a.status, phase=a.phase,
             failure_class=a.failure_class, failure_message=a.failure_message,
             diagnosis=a.diagnosis, patch_summary=a.patch_summary,
+            patch_diff=a.patch_diff,
             zerops_project_id=a.project_id, build_log=a.logs[-8000:],
             verification=a.verification or None,
             ended_at=datetime.now(timezone.utc),
@@ -385,6 +421,8 @@ def main() -> None:
         log.info("picked up job %s (%s)", job_id, kind)
         if kind == "verify":
             process_verify(job_id, task.get("target", "ephemeral"))
+        elif kind == "codefix":
+            process_codefix(job_id)
         else:
             process_analyze(job_id)
     log.info("worker stopped")

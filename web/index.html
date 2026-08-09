@@ -58,7 +58,7 @@
 
   <!-- Top of the page, same as the run screen. Not built yet, and labelled as
        such: a disabled control is honest, a working-looking one is not. -->
-  <section class="max-w-content mx-auto px-5 md:px-8 pt-8">
+  <section class="max-w-content mx-auto px-5 md:px-8 pt-6">
     <div class="card p-4 flex flex-wrap items-center gap-x-4 gap-y-2">
       <span class="pill pill-running">Coming soon</span>
       <p class="text-sm text-fg2 flex-grow min-w-[16rem]">
@@ -72,13 +72,13 @@
   </section>
 
   <!-- Hero. The repository input is the product, so it gets the visual weight. -->
-  <section class="max-w-content mx-auto px-5 md:px-8 pt-10 md:pt-14 pb-14">
+  <section class="max-w-content mx-auto px-5 md:px-8 pt-8 md:pt-10 pb-8">
     <div class="max-w-3xl mx-auto text-center">
       <p class="text-[11px] font-semibold tracking-[0.14em] uppercase text-accent mb-5">Verified deployments for Zerops</p>
-      <h1 class="text-4xl md:text-[3.25rem] md:leading-[1.08] font-semibold tracking-tight mb-5">
+      <h1 class="text-4xl md:text-[2.75rem] md:leading-[1.1] font-semibold tracking-tight mb-4">
         From repository to <span class="text-accent">verified deployment.</span>
       </h1>
-      <p class="text-lg text-fg2 max-w-2xl mx-auto mb-9">
+      <p class="text-lg text-fg2 max-w-2xl mx-auto mb-6">
         Analyze a public GitHub or GitLab repository, generate Zerops configuration, deploy it
         in an isolated environment, and verify that it actually boots.
       </p>
@@ -95,6 +95,44 @@
       </form>
       <p class="text-sm text-danger mt-3 hidden" id="hero-err" role="alert"></p>
 
+      <details class="collapse mt-4 text-left rounded-card border border-edge bg-surface2 max-w-2xl mx-auto">
+        <summary class="collapse-toggle !py-3">
+          <span class="collapse-toggle__title text-sm">Bring your own LLM key</span>
+          <span class="collapse-toggle__meta"><span class="pill pill-idle">optional</span><span class="chev" aria-hidden="true"></span></span>
+        </summary>
+        <div class="px-4 pb-4 flex flex-col gap-3">
+          <p class="text-sm text-fg2">
+            Used for this run only — never stored, discarded when the run settles. BYOK runs skip the
+            shared token budget. Currently supported: OpenAI, Groq, OpenRouter, or any OpenAI-compatible
+            endpoint — more coming.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-fg2">Provider</span>
+              <select id="byok-provider" class="field px-3 py-2 text-sm">
+                <option value="">Use Zeroth's keys (budgeted)</option>
+                <option value="openai">OpenAI</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="custom">Custom (OpenAI-compatible)</option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-fg2">API key</span>
+              <input id="byok-key" type="password" autocomplete="off" spellcheck="false" class="field px-3 py-2 font-mono text-sm" placeholder="sk-..."/>
+            </label>
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-fg2">Model <span class="text-fg3">(optional for presets)</span></span>
+              <input id="byok-model" type="text" autocomplete="off" spellcheck="false" class="field px-3 py-2 font-mono text-sm" placeholder="preset default"/>
+            </label>
+            <label class="flex flex-col gap-1 text-sm" id="byok-baseurl-row" hidden>
+              <span class="text-fg2">Base URL</span>
+              <input id="byok-baseurl" type="url" autocomplete="off" spellcheck="false" class="field px-3 py-2 font-mono text-sm" placeholder="https://api.example.com/v1"/>
+            </label>
+          </div>
+        </div>
+      </details>
+
       <ul class="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-sm text-fg2">
         <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Public GitHub / GitLab</li>
         <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Up to 50&nbsp;MB</li>
@@ -105,8 +143,8 @@
   </section>
 
 <!-- Workflow. Steps 1-3 always run; 4-5 only when the user asks for them. -->
-  <section class="max-w-content mx-auto px-5 md:px-8 pb-20">
-    <div class="card p-6 md:p-8">
+  <section class="max-w-content mx-auto px-5 md:px-8 pb-6">
+    <div class="card p-6">
       <div class="grid grid-cols-1 md:grid-cols-5 gap-5 md:gap-3">
         <div class="step is-core flex md:flex-col gap-4 md:gap-3 items-start">
           <div class="step-icon"><span class="material-symbols-outlined text-[20px]">folder_code</span></div>
@@ -120,16 +158,16 @@
           <div class="step-icon"><span class="material-symbols-outlined text-[20px]">manage_search</span></div>
           <div>
             <div class="step-num mb-1">02 · ANALYZE</div>
-            <div class="font-medium text-sm mb-1">Extract facts</div>
-            <p class="text-sm text-fg2">A rules engine reads manifests and config files. Your source code never reaches the model.</p>
+            <div class="font-medium text-sm mb-1">Facts, then a verdict</div>
+            <p class="text-sm text-fg2">A rules engine reads manifests and answers first: deployable, needs changes, or not deployable — with evidence.</p>
           </div>
         </div>
         <div class="step is-core flex md:flex-col gap-4 md:gap-3 items-start">
           <div class="step-icon"><span class="material-symbols-outlined text-[20px]">description</span></div>
           <div>
             <div class="step-num mb-1">03 · GENERATE</div>
-            <div class="font-medium text-sm mb-1">Write the config</div>
-            <p class="text-sm text-fg2">Templates render the YAML and parse it back. You get the files here — nothing provisioned.</p>
+            <div class="font-medium text-sm mb-1">Config — or the fix</div>
+            <p class="text-sm text-fg2">Built from official Zerops recipes and checked against platform rules. Not deployable yet? You get the exact fix prompt — or an AI-drafted patch.</p>
           </div>
         </div>
         <div class="step flex md:flex-col gap-4 md:gap-3 items-start">
@@ -144,12 +182,12 @@
           <div class="step-icon"><span class="material-symbols-outlined text-[20px]">verified</span></div>
           <div>
             <div class="step-num mb-1">05 · VERIFY</div>
-            <div class="font-medium text-sm mb-1">Watch it boot</div>
-            <p class="text-sm text-fg2">Read the logs, health-check it, repair and retry on failure.</p>
+            <div class="font-medium text-sm mb-1">Prove it, on record</div>
+            <p class="text-sm text-fg2">Probe every route the code declares; on failure, diagnose from logs, repair with a visible diff, retry. Every step lands in a replayable timeline.</p>
           </div>
         </div>
       </div>
-      <p class="text-sm text-fg2 mt-7 pt-5 border-t border-edge">
+      <p class="text-sm text-fg2 mt-5 pt-4 border-t border-edge">
         <span class="font-medium text-fg">Steps 1&ndash;3 always run</span> and provision nothing, so the configuration
         arrives in seconds. <span class="font-medium text-fg">Steps 4&ndash;5 are opt-in</span> — deploying costs time
         and credits, so it happens only when you press the button.
@@ -158,10 +196,10 @@
   </section>
 
   <!-- The two claims that distinguish this from a config generator. -->
-  <section class="max-w-content mx-auto px-5 md:px-8 pb-20">
+  <section class="max-w-content mx-auto px-5 md:px-8 pb-6">
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-      <article class="card p-7 md:p-8 flex flex-col">
+      <article class="card p-6 flex flex-col">
         <div class="step-num mb-4">01</div>
         <h2 class="text-xl font-semibold tracking-tight mb-3">Deterministic analyzer</h2>
         <p class="text-fg2 mb-6">
@@ -183,7 +221,7 @@
         </p>
       </article>
 
-      <article class="card p-7 md:p-8 flex flex-col">
+      <article class="card p-6 flex flex-col">
         <div class="step-num mb-4">02</div>
         <h2 class="text-xl font-semibold tracking-tight mb-3">Proved deployment</h2>
         <p class="text-fg2 mb-6">
@@ -208,10 +246,17 @@
       </article>
 
     </div>
+
+    <ul class="flex flex-wrap justify-center gap-x-7 gap-y-2 mt-6 text-sm text-fg2">
+      <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-accent">timeline</span> Pathfinder replay — every run is an auditable timeline</li>
+      <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-accent">difference</span> Repairs shown as diffs, never applied to your repo</li>
+      <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-accent">key</span> Bring your own LLM key — per run, never stored</li>
+      <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-accent">delete_sweep</span> Ephemeral projects, always torn down</li>
+    </ul>
   </section>
 
   <!-- Recent verifications -->
-  <section id="verifications" class="max-w-content mx-auto px-5 md:px-8 pb-24">
+  <section id="verifications" class="max-w-content mx-auto px-5 md:px-8 pb-10">
     <div class="flex items-end justify-between gap-4 mb-5">
       <div>
         <h2 class="text-xl font-semibold tracking-tight">Recent verifications</h2>

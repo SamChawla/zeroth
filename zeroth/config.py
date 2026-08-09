@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     # for a bounded wait rather than maximum persistence: two attempts still
     # demonstrates the repair loop, three mostly demonstrates patience.
     max_attempts: int = 2
-    provision_timeout_s: int = 120
+    # Import of an ephemeral project. Usually under a minute, but the
+    # platform queues under load and a timeout here kills a run before it
+    # deployed anything - observed live when parallel runs slowed core
+    # activation past two minutes.
+    provision_timeout_s: int = 300
     # A real application build - a Next.js production build, say - does not fit
     # in four minutes on a small builder.
     deploy_timeout_s: int = 600

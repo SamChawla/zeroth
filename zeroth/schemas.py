@@ -52,6 +52,7 @@ class RunOut(BaseModel):
     failure_message: str
     diagnosis: str
     patch_summary: str
+    patch_diff: str = ""
     build_log: str
     verification: dict | None
     started_at: datetime

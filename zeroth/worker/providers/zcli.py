@@ -154,9 +154,12 @@ class ZcliProvider:
             # import does, and it used to leak because cleanup only ran on a
             # non-zero exit code.
             self._destroy_by_name(project_name)
+            cause = ("a buildFromGit import runs the application's full build"
+                     if "buildFromGit" in import_yaml
+                     else "the platform can queue imports under load")
             raise ZcliError(
-                f"import did not finish within {budget}s. A buildFromGit import runs the "
-                f"application's full build, which can exceed this budget."
+                f"import did not finish within {budget}s ({cause}). Nothing was "
+                f"deployed; the partially-created project was cleaned up. Try again."
             ) from None
         finally:
             Path(path).unlink(missing_ok=True)
@@ -202,7 +205,8 @@ class ZcliProvider:
         raise ZcliError(f"created project '{name}' but could not find its id in `zcli project list`")
 
     def deploy(self, project_id: str, repo_dir: Path, zerops_yaml: str,
-               targets: list[tuple[str, str]] | None = None) -> DeployResult:
+               targets: list[tuple[str, str]] | None = None,
+               routes: list[str] | None = None) -> DeployResult:
         # A repository may already ship its own Zerops config, and zcli picks
         # zerops.yaml over the zerops.yml we write - so ours was silently
         # ignored and the deploy ran against theirs, failing with "setup <name>
@@ -258,14 +262,32 @@ class ZcliProvider:
         # A build that succeeded and a deploy that activated still is not the
         # claim being sold. "Verified" means it answers, so the deploy path
         # ends the same way the git-build path does: polling the URL.
-        probe = self.await_git_build(project_id, [svc for svc, _ in targets])
+        probe = self.await_git_build(project_id, [svc for svc, _ in targets], routes=routes)
         probe.logs = (combined + "\n" + probe.logs)[-8000:]
         if probe.ok:
             probe.verification["deployed_setups"] = setups
         return probe
 
 
-    def await_git_build(self, project_id: str, services: list[str]) -> DeployResult:
+    def _runtime_logs(self, project_id: str, services: list[str]) -> str:
+        """Runtime logs for the repair loop. This is the crash traceback -
+        without it a diagnosis is a guess about a URL that did not answer."""
+        chunks = []
+        try:
+            listing = self._run(["service", "list", "-P", project_id], timeout=30)
+            for line in listing.stdout.splitlines():
+                cells = [c.strip() for c in line.split("│") if c.strip()]
+                if len(cells) >= 2 and cells[1] in services:
+                    proc = self._run(["service", "log", "-P", project_id, "-S", cells[0],
+                                      "--limit", "60"], timeout=45)
+                    if proc.stdout.strip():
+                        chunks.append(f"--- {cells[1]} runtime ---\n{proc.stdout[-3000:]}")
+        except Exception:  # noqa: BLE001 - diagnostics must not replace the error
+            pass
+        return "\n".join(chunks)
+
+    def await_git_build(self, project_id: str, services: list[str],
+                        routes: list[str] | None = None) -> DeployResult:
         """Verify a buildFromGit import by checking the application answers.
 
         A buildFromGit import already builds and deploys the application - the
@@ -282,15 +304,38 @@ class ZcliProvider:
             )
 
         last = "no response"
-        deadline = time.time() + 180  # boot + readiness, not another build
+        # Boot + LB registration. 180s was calibrated on a quiet platform;
+        # under load a fresh container can take minutes to route, and giving
+        # up early misreports a healthy app as a failed one.
+        # Observed live: the app booted (runtime logs show gunicorn listening)
+        # while the fresh subdomain still 502'd for minutes - LB registration
+        # for a brand-new project lags the boot under load.
+        deadline = time.time() + 420
         while time.time() < deadline:
             try:
                 resp = httpx.get(url, timeout=10, follow_redirects=True)
                 if resp.status_code < 500:
+                    checks = [{"path": "/", "status": resp.status_code,
+                               "ok": resp.status_code < 500}]
+                    # Application-level smoke checks: every parameter-free GET
+                    # route the fingerprint found in the sources. A 4xx on a
+                    # route the app itself declares is a finding, not noise.
+                    for route in (routes or []):
+                        if route == "/":
+                            continue
+                        try:
+                            r2 = httpx.get(url.rstrip("/") + route, timeout=10,
+                                           follow_redirects=True)
+                            checks.append({"path": route, "status": r2.status_code,
+                                           "ok": r2.status_code < 400})
+                        except httpx.HTTPError as exc:
+                            checks.append({"path": route, "status": 0, "ok": False,
+                                           "error": str(exc)[:120]})
                     return DeployResult(
                         ok=True, phase="runtime", project_id=project_id, url=url,
-                        logs=f"GET {url} -> {resp.status_code}",
-                        verification={"source": "zcli", "http": resp.status_code, "url": url},
+                        logs="\n".join(f"GET {c['path']} -> {c['status']}" for c in checks),
+                        verification={"source": "zcli", "http": resp.status_code,
+                                      "url": url, "checks": checks},
                     )
                 last = f"HTTP {resp.status_code}"
             except httpx.HTTPError as exc:
@@ -299,6 +344,7 @@ class ZcliProvider:
         return DeployResult(
             ok=False, phase="runtime", project_id=project_id, url=url,
             error=f"the application never answered at {url} ({last})",
+            logs=self._runtime_logs(project_id, services),
         )
 
     def _public_url(self, project_id: str, setups: list[str]) -> str:

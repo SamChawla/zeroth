@@ -382,13 +382,15 @@ function handle(msg, jobId) {
           <span class="pill pill-warning w-fit">Repaired &amp; retried</span>
           <div class="text-sm text-fg2"><strong class="text-fg font-medium">Diagnosis:</strong> ${escape(msg.diagnosis)}</div>
           <div class="text-sm text-fg2"><strong class="text-fg font-medium">Repair:</strong> ${escape(msg.patch_summary)}</div>
+          ${msg.diff ? renderDiff(msg.diff) : ""}
         </div>`);
       break;
     case "attempt_passed":
       logLine(`PASS attempt ${msg.attempt} in ${msg.elapsed}s`, "text-emerald-400");
       appendAttempt(msg.attempt, `
-        <div><span class="pill pill-verified"><span class="dot bg-success"></span> Verified in ${msg.elapsed}s</span></div>
-        <div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(msg.verification || {}))}</div>`);
+        <div><span class="pill ${runProvider === "simulated" ? "pill-warning" : "pill-verified"}">${runProvider === "simulated" ? `Simulated pass in ${msg.elapsed}s` : `<span class="dot bg-success"></span> Verified in ${msg.elapsed}s`}</span></div>
+        ${renderChecks((msg.verification || {}).checks)}
+        ${!(msg.verification || {}).checks ? `<div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(msg.verification || {}))}</div>` : ""}`);
       VERIFY_CHECKS.slice(0, 4).forEach((id) => setCheck(id, "done"));
       setStage("verify", runProvider === "simulated" ? "failed" : "complete",
                runProvider === "simulated" ? "Simulated" : "Verified");
@@ -521,6 +523,29 @@ function renderConfig() {
     || '<p class="text-sm text-fg2">No services were generated.</p>';
   renderBootLog(null);
   show("result-grid");
+}
+
+/* A diff is the honest form of "the AI changed something": the exact lines,
+   colored the way every developer already reads them. */
+function renderDiff(diff) {
+  const lines = String(diff).split("\n").map((line) => {
+    const cls = line.startsWith("+") && !line.startsWith("+++") ? "text-emerald-400"
+      : line.startsWith("-") && !line.startsWith("---") ? "text-red-400"
+      : line.startsWith("@@") ? "text-indigo-300" : "text-zinc-500";
+    return `<span class="${cls}">${escape(line)}</span>`;
+  }).join("\n");
+  return `<pre class="code-surface rounded-xl p-3 mt-1 font-mono text-[12px] leading-relaxed overflow-x-auto scroll-thin">${lines}</pre>`;
+}
+
+function renderChecks(checks) {
+  if (!checks || !checks.length) return "";
+  return `<div class="flex flex-col gap-1 mt-1">` + checks.map((c) => `
+    <div class="flex items-center gap-2 text-sm">
+      <span class="status-icon status-icon--sm status-icon--css status-icon--${c.ok ? "pass" : "fail"}" aria-hidden="true"></span>
+      <span class="status-sr">${c.ok ? "pass" : "fail"}</span>
+      <span class="font-mono text-[12px]">GET ${escape(c.path)}</span>
+      <span class="text-fg3 text-[12px]">${c.status ? "HTTP " + c.status : escape(c.error || "no response")}</span>
+    </div>`).join("") + `</div>`;
 }
 
 function renderBootLog(verified) {
@@ -771,6 +796,45 @@ function initTryout() {
       : '<span class="material-symbols-outlined text-[15px]">visibility_off</span> Hide';
   });
 
+  $("codefix-go").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">progress_activity</span> Drafting…';
+    const box = $("codefix-result");
+    box.innerHTML = "";
+    show("codefix-result");
+    try {
+      const res = await fetch(`${API}/api/jobs/${currentJob}/codefix`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `HTTP ${res.status}`);
+      }
+      // The worker drafts asynchronously; poll the job until the artifact lands.
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const job = await (await fetch(`${API}/api/jobs/${currentJob}`)).json();
+        const art = (job.artifacts || []).find((a) => a.kind === "code_fix");
+        const failed = (job.events || []).some((ev) => ev.event === "codefix_failed");
+        if (art) {
+          const split = art.content.indexOf("\n\n---");
+          const explanation = split > 0 ? art.content.slice(0, split) : "";
+          const diff = split > 0 ? art.content.slice(split + 2) : art.content;
+          box.innerHTML = (explanation ? `<p class="text-sm text-fg2 mb-2">${escape(explanation)}</p>` : "")
+            + renderDiff(diff)
+            + '<p class="text-[12px] text-fg3 mt-2">Apply with <span class="font-mono">git apply zeroth-code-fix.diff</span>, review, commit — then analyze again.</p>';
+          return;
+        }
+        if (failed) throw new Error("The model could not draft a fix this time.");
+      }
+      throw new Error("Timed out waiting for the draft.");
+    } catch (err) {
+      box.innerHTML = `<p class="text-sm text-danger">${escape(err.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">auto_fix_high</span> Draft the fix with AI';
+    }
+  });
+
   $("fixprompt-copy").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     const original = btn.innerHTML;
@@ -865,7 +929,8 @@ function hydrate(job) {
     if (r.status === "passed") {
       appendAttempt(r.attempt_no, `
         <div><span class="pill pill-verified"><span class="dot bg-success"></span> Verified</span></div>
-        <div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(r.verification || {}))}</div>`);
+        ${renderChecks((r.verification || {}).checks)}
+        ${!(r.verification || {}).checks ? `<div class="font-mono text-[12px] text-fg2">${escape(JSON.stringify(r.verification || {}))}</div>` : ""}`);
     } else {
       appendAttempt(r.attempt_no, `
         <div><span class="pill pill-failed">Failed — ${escape(r.failure_class)}</span></div>
@@ -877,6 +942,7 @@ function hydrate(job) {
           <span class="pill pill-warning w-fit">Repaired &amp; retried</span>
           <div class="text-sm text-fg2"><strong class="text-fg font-medium">Diagnosis:</strong> ${escape(r.diagnosis)}</div>
           ${r.patch_summary ? `<div class="text-sm text-fg2"><strong class="text-fg font-medium">Repair:</strong> ${escape(r.patch_summary)}</div>` : ""}
+          ${r.patch_diff ? renderDiff(r.patch_diff) : ""}
         </div>`);
     }
   });

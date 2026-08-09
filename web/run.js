@@ -5,6 +5,7 @@ let elapsedTimer = null;
 let runProvider = "";
 let compatReport = null;
 let hasOwnConfig = false;
+let hasOfficial = false;
 
 /* ---------- terminal ---------- */
 
@@ -131,6 +132,7 @@ function resetRun() {
   hide("tryout-verdict");
   hide("config-source-row");
   hasOwnConfig = false;
+  hasOfficial = false;
   hide("compat");
   hide("fixprompt");
   compatReport = null;
@@ -242,6 +244,7 @@ function handle(msg, jobId) {
       logLine("[ready] configuration generated — nothing deployed", "text-indigo-300");
       $("live-dot").className = "dot bg-accent";
       hasOwnConfig = !!msg.has_own_config;
+      hasOfficial = !!msg.has_official_recipe;
       if (msg.verifiable !== false) showTryout();
       break;
     case "verify_rejected":
@@ -548,9 +551,19 @@ function showTryout() {
     hide("tryout-verdict");
   hide("config-source-row");
   hasOwnConfig = false;
+  hasOfficial = false;
   }
-  $("config-source-row").classList.toggle("hidden", !hasOwnConfig);
-  $("config-source-row").classList.toggle("flex", hasOwnConfig);
+  // Only offer candidates that actually exist for this repository.
+  const anyChoice = hasOwnConfig || hasOfficial;
+  $("choice-repo").hidden = !hasOwnConfig;
+  $("choice-official").hidden = !hasOfficial;
+  if (!hasOwnConfig) {
+    const fallback = document.querySelector(
+      `input[name="config-source"][value="${hasOfficial ? "official" : "generated"}"]`);
+    if (fallback) fallback.checked = true;
+  }
+  $("config-source-row").classList.toggle("hidden", !anyChoice);
+  $("config-source-row").classList.toggle("flex", anyChoice);
   show("tryout");
 }
 
@@ -562,9 +575,9 @@ function tryoutError(message) {
 }
 
 function selectedConfigSource() {
-  if (!hasOwnConfig) return "generated";
+  if (!hasOwnConfig && !hasOfficial) return "generated";
   const picked = document.querySelector('input[name="config-source"]:checked');
-  return picked ? picked.value : "repository";
+  return picked ? picked.value : (hasOwnConfig ? "repository" : "official");
 }
 
 function selectedTarget() {
@@ -697,6 +710,7 @@ function hydrate(job) {
 
   const artifact = (kind) => (job.artifacts || []).find((a) => a.kind === kind);
   hasOwnConfig = !!artifact("repo_zerops_yaml");
+  hasOfficial = !!artifact("official_zerops_yaml");
   const importYaml = artifact("import_yaml");
   const zeropsYaml = artifact("zerops_yaml");
   if (importYaml) $("import-yaml").textContent = importYaml.content;

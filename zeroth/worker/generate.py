@@ -11,7 +11,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from zeroth.config import settings
-from zeroth.worker.constraints import check as check_constraints
+from zeroth.worker.constraints import check as check_constraints  # re-exported for the worker
 from zeroth.worker.recipes import for_service
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"

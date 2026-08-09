@@ -12,6 +12,8 @@ from zeroth.safety import RepoRejected, normalise, preflight_size
 from zeroth.worker import ingest, pathfinder
 from zeroth.worker.analyze import analyze
 from zeroth.worker.compatibility import assess
+from zeroth.worker.generate import check_constraints
+from zeroth.worker.recipes import fetch_official
 from zeroth.worker.fingerprint import build as build_fingerprint
 from zeroth.worker.generate import render_import_yaml, render_report, render_zerops_yaml
 from zeroth.worker.providers import get_provider
@@ -89,6 +91,20 @@ def process_analyze(job_id: str) -> None:
         if own_import:
             _save(db, job, "repo_import_yaml", "import.yaml (from repository)", own_import)
 
+        # The platform publishes a recipe per stack. It is the most
+        # authoritative starting point available, so offer it as a candidate -
+        # but only after it passes the same constraint check as everything
+        # else, because the recipes are configurations for their own demo apps
+        # and some of them do not satisfy the rules.
+        fp_dict = job.fingerprint or {}
+        official = fetch_official(fp_dict.get("language") or "", fp_dict.get("framework") or "")
+        if official and not check_constraints(official["zerops_yml"]):
+            _save(db, job, "official_zerops_yaml",
+                  f"zerops.yml ({official['repo']})", official["zerops_yml"])
+            if official.get("import_yaml"):
+                _save(db, job, "official_import_yaml",
+                      f"import.yaml ({official['repo']})", official["import_yaml"])
+
         framework = (job.fingerprint or {}).get("framework") or ""
         import_yaml = render_import_yaml(manifest, job.repo_url)
         zerops_yaml = render_zerops_yaml(manifest, job.repo_url, framework)
@@ -104,6 +120,7 @@ def process_analyze(job_id: str) -> None:
         bus.publish(job.id, "ready", {
             "verifiable": settings.pathfinder_provider != "off",
             "has_own_config": bool(own),
+            "has_official_recipe": bool(_artifact(db, job, "official_zerops_yaml")),
         })
 
     except (RepoRejected, Exception) as exc:  # noqa: BLE001
@@ -152,9 +169,14 @@ def process_verify(job_id: str, target: str) -> None:
         repo_dir = ingest.clone(clone_url)
 
         provider = get_provider(token=token)
-        use_repo = job.config_source == "repository"
-        override = _artifact(db, job, "repo_zerops_yaml") if use_repo else ""
-        import_override = _artifact(db, job, "repo_import_yaml") if use_repo else ""
+        source = job.config_source
+        override = import_override = ""
+        if source == "repository":
+            override = _artifact(db, job, "repo_zerops_yaml")
+            import_override = _artifact(db, job, "repo_import_yaml")
+        elif source == "official":
+            override = _artifact(db, job, "official_zerops_yaml")
+            import_override = _artifact(db, job, "official_import_yaml")
         result = pathfinder.run(
             job.id, job.repo_url, repo_dir, job.manifest,
             lambda ev, payload: bus.publish(job.id, ev, payload),

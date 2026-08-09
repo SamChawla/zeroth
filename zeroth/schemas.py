@@ -24,7 +24,7 @@ class VerifyRequest(BaseModel):
     acknowledge: bool = False
     # "repository" verifies the zerops.yaml already in the repo. A repo that
     # ships working config is better evidence than one we wrote.
-    config_source: Literal["generated", "repository"] = "generated"
+    config_source: Literal["generated", "repository", "official"] = "generated"
 
 
 class ArtifactOut(BaseModel):

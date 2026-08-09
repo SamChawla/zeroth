@@ -16,7 +16,10 @@ Vendored rather than fetched: coverage of the recipe repositories is uneven
 generator that silently degrades when a URL 404s is worse than one that is
 explicit about what it knows.
 """
+import json
 from dataclasses import dataclass, field
+
+import httpx
 
 
 @dataclass
@@ -172,3 +175,113 @@ def for_service(service_type: str, framework: str = "") -> Recipe:
         return FRAMEWORKS[key]
     base = (service_type or "").split("@")[0]
     return BASE.get(base, BASE["python"])
+
+# ---------------------------------------------------------------------------
+# The official corpus.
+#
+# zeropsio publishes ~87 recipe repositories, each a working application with
+# its own zerops.yml. That is the authoritative starting point for a stack and
+# it is maintained by the platform, so it beats anything inferred here.
+#
+# It is a starting point rather than a law: the recipes are configurations for
+# their own demo applications and they disagree with each other (recipe-flask
+# builds on alpine, recipe-python does not; recipe-nextjs-nodejs runs
+# `next start` where a standalone build needs a different launch entirely).
+# So a fetched recipe is still put through constraints.check before use - the
+# recipe proposes, the constraints decide.
+RECIPE_REPOS = {
+    # framework -> repository
+    "nextjs": "recipe-nextjs-nodejs",
+    "nuxt": "recipe-nuxt-nodejs",
+    "astro": "recipe-astro-nodejs",
+    "remix": "recipe-remix-nodejs",
+    "qwik": "recipe-qwik-nodejs",
+    "analog": "recipe-analog-nodejs",
+    "nitro": "recipe-nitro-nodejs",
+    "react": "recipe-react-nodejs",
+    "angular": "recipe-angular-static",
+    "nestjs": "recipe-nestjs",
+    "adonis": "recipe-adonis",
+    "express": "recipe-nodejs",
+    "django": "recipe-django",
+    "flask": "recipe-flask",
+    "laravel": "recipe-laravel-minimal",
+    "filament": "recipe-filament",
+    "nette": "recipe-nette",
+    "rails": "recipe-rails",
+    "phoenix": "recipe-phoenix",
+    "echo": "recipe-echo",
+    "medusa": "recipe-medusa",
+    "payload": "recipe-payload",
+    "sails": "recipe-sails",
+    "redwoodjs": "recipe-redwoodjs",
+    "elysia": "recipe-elysia",
+    "hono": "recipe-hono-deno",
+}
+
+RECIPE_REPOS_BY_LANGUAGE = {
+    "python": "recipe-python",
+    "javascript": "recipe-nodejs",
+    "typescript": "recipe-nodejs",
+    "nodejs": "recipe-nodejs",
+    "node": "recipe-nodejs",
+    "go": "recipe-go",
+    "golang": "recipe-go",
+    "php": "recipe-php",
+    "ruby": "recipe-ruby",
+    "rust": "recipe-rust",
+    "java": "recipe-java",
+    "elixir": "recipe-elixir",
+    "deno": "recipe-deno",
+    "bun": "recipe-bun",
+}
+
+RAW = "https://raw.githubusercontent.com/zeropsio/{repo}/main/{path}"
+_CACHE_TTL = 86400
+
+
+def repo_for(language: str, framework: str = "") -> str:
+    """Which official recipe repository covers this stack, if any."""
+    key = (framework or "").strip().lower().replace(".", "").replace(" ", "")
+    if key in RECIPE_REPOS:
+        return RECIPE_REPOS[key]
+    return RECIPE_REPOS_BY_LANGUAGE.get((language or "").strip().lower(), "")
+
+
+def fetch_official(language: str, framework: str = "") -> dict:
+    """The official recipe's own configuration, cached.
+
+    Returns {} when there is no recipe for the stack or the network is
+    unavailable - callers fall back to the vendored tables above, which is why
+    those still exist. Never raises: a missing recipe must not fail a run.
+    """
+    repo = repo_for(language, framework)
+    if not repo:
+        return {}
+
+    from zeroth import bus  # local import: keeps this module importable offline
+
+    key = f"zeroth:recipe:{repo}"
+    try:
+        cached = bus.client().get(key)
+        if cached:
+            return json.loads(cached)
+    except Exception:  # noqa: BLE001 - a cache miss is not an error
+        pass
+
+    found = {"repo": repo, "url": f"https://github.com/zeropsio/{repo}"}
+    for name, path in (("zerops_yml", "zerops.yml"), ("import_yaml", "import.yaml")):
+        try:
+            resp = httpx.get(RAW.format(repo=repo, path=path), timeout=8, follow_redirects=True)
+            if resp.status_code == 200 and resp.text.strip():
+                found[name] = resp.text
+        except httpx.HTTPError:
+            continue
+    if "zerops_yml" not in found:
+        return {}
+
+    try:
+        bus.client().set(key, json.dumps(found), ex=_CACHE_TTL)
+    except Exception:  # noqa: BLE001
+        pass
+    return found

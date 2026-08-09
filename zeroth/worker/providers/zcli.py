@@ -277,6 +277,19 @@ class ZcliProvider:
                 )
 
         combined = self._scrub("\n".join(log_chunks))
+
+        # Re-bind the subdomain AFTER the deploy. The import enabled it on a
+        # service that had no ports yet; the push just declared the real one,
+        # and the route from before does not follow it - the app sits healthy
+        # behind an eternal 502. The git-build path never hits this because
+        # its import queues the enable AFTER the build. Confirmed live:
+        # gunicorn listening in the runtime logs while the subdomain 502'd
+        # for minutes.
+        for service, _ in targets:
+            self._progress(f"binding the public subdomain for {service}")
+            self._run(["service", "enable-subdomain", service, "-P", project_id],
+                      timeout=120)
+
         # A build that succeeded and a deploy that activated still is not the
         # claim being sold. "Verified" means it answers, so the deploy path
         # ends the same way the git-build path does: polling the URL.

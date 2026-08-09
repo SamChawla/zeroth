@@ -141,6 +141,7 @@ def assess(fp) -> Compatibility:
     _check_backing_services(findings, facts)
     _check_containerisation(findings, present)
     _check_existing_config(findings, present)
+    _check_encoding(findings, facts)
 
     report = _verdict(findings, base, facts)
     report.fix_prompt = build_fix_prompt(report, facts)
@@ -252,6 +253,20 @@ def _check_existing_config(findings, present) -> None:
         "declares; a verification run uses the generated one, not the file in the repository.",
         ", ".join(sorted(found)),
     ))
+
+
+def _check_encoding(findings, facts) -> None:
+    """A UTF-16 requirements.txt breaks the build before anything else can."""
+    for f in facts.get("facts") or []:
+        if f.get("key") == "requirements_encoding":
+            findings.append(Finding(
+                "change",
+                "requirements.txt is not UTF-8",
+                "The file is UTF-16 - the usual cause is `pip freeze > requirements.txt` "
+                "in PowerShell. pip on Linux cannot parse it, so the build fails at "
+                "dependency install. Re-save it as UTF-8.",
+                f.get("evidence", ""),
+            ))
 
 
 def _check_containerisation(findings, present) -> None:

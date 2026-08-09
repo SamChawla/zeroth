@@ -70,6 +70,10 @@ class Fingerprint:
     dependencies: list[str] = field(default_factory=list)
     compose_services: list[str] = field(default_factory=list)
     present_files: list[str] = field(default_factory=list)
+    # Set when the application does not live at the repository root but in a
+    # single subdirectory (repo/blogWebsite/manage.py and nothing at the top).
+    # Deploys use this as the working directory.
+    project_subdir: str = ""
     tree: list[str] = field(default_factory=list)
     facts: list[Fact] = field(default_factory=list)
 
@@ -81,6 +85,30 @@ class Fingerprint:
         data = asdict(self)
         data["facts"] = [asdict(f) for f in self.facts]
         return data
+
+
+def _read_smart(path: Path, limit: int = 20_000) -> tuple[str, str]:
+    """Read a text file, surviving Windows encodings. Returns (text, encoding).
+
+    `pip freeze > requirements.txt` in PowerShell writes UTF-16, which Linux
+    pip cannot parse and which reads as NUL-riddled garbage in UTF-8. Treating
+    that as "no dependencies" produced a wrong verdict on a real repository;
+    the encoding is itself a finding, so it is returned alongside the text.
+    """
+    try:
+        raw = path.read_bytes()[: limit * 4]
+    except OSError:
+        return "", "unreadable"
+    for bom, enc in ((b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be"), (b"\xef\xbb\xbf", "utf-8-sig")):
+        if raw.startswith(bom):
+            try:
+                return raw.decode(enc)[:limit], enc
+            except UnicodeDecodeError:
+                break
+    try:
+        return raw.decode("utf-8")[:limit], "utf-8"
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", errors="replace")[:limit], "unknown"
 
 
 def _read(path: Path, limit: int = 20_000) -> str:
@@ -105,6 +133,24 @@ def _parse_python_deps(text: str) -> list[str]:
 def build(repo_dir: Path, repo_name: str) -> Fingerprint:
     fp = Fingerprint(repo_name=repo_name)
     root_files = {p.name for p in repo_dir.iterdir() if p.is_file()}
+
+    # A very common shape: nothing but a README at the root, and the whole
+    # application one directory down. Judging the root alone calls such a
+    # repository "unknown", which is wrong in the way that matters most - the
+    # verdict. If the root has no manifest and exactly one subdirectory does,
+    # analyze that subdirectory as the project root and say so.
+    if not (root_files & set(MANIFEST_FILES)):
+        candidates = [
+            d for d in repo_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+            and {f.name for f in d.iterdir() if f.is_file()} & set(MANIFEST_FILES)
+        ]
+        if len(candidates) == 1:
+            repo_dir = candidates[0]
+            fp.project_subdir = candidates[0].name
+            fp.add("project_root", candidates[0].name,
+                   f"no manifest at the repository root; {candidates[0].name}/ has one")
+            root_files = {p.name for p in repo_dir.iterdir() if p.is_file()}
 
     fp.present_files = sorted(
         f for f in root_files if f in MANIFEST_FILES + CONFIG_FILES
@@ -133,10 +179,16 @@ def build(repo_dir: Path, repo_name: str) -> Fingerprint:
 
 def _detect_python(repo_dir: Path, root_files: set[str], fp: Fingerprint) -> None:
     if "requirements.txt" in root_files:
-        deps = _parse_python_deps(_read(repo_dir / "requirements.txt"))
+        text, encoding = _read_smart(repo_dir / "requirements.txt")
+        deps = _parse_python_deps(text)
         fp.dependencies.extend(deps)
         fp.language = "python"
         fp.add("language", "python", "requirements.txt present")
+        if encoding.startswith("utf-16"):
+            # Real finding, not trivia: Linux pip cannot parse UTF-16, so the
+            # build fails on this file exactly as it is committed.
+            fp.add("requirements_encoding", encoding,
+                   "requirements.txt is UTF-16 (Windows pip freeze); Linux pip cannot read it")
     if "pyproject.toml" in root_files:
         fp.language = "python"
         fp.add("language", "python", "pyproject.toml present")

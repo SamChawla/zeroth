@@ -169,6 +169,11 @@ def process_verify(job_id: str, target: str) -> None:
         repo_dir = ingest.clone(clone_url)
 
         provider = get_provider(token=token)
+        # When the application lives in a subdirectory, that subdirectory IS
+        # the project as far as building and deploying are concerned.
+        subdir = (job.fingerprint or {}).get("project_subdir") or ""
+        if subdir and (repo_dir / subdir).is_dir():
+            repo_dir = repo_dir / subdir
         source = job.config_source
         override = import_override = ""
         if source == "repository":

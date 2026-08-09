@@ -38,7 +38,7 @@ tailwind.config = {
         content: "1180px",
         // The run screen is a workspace, not an article: it earns the
         // viewport. Capped so it does not sprawl on ultrawide displays.
-        workspace: "1560px",
+        workspace: "min(1680px, calc(100vw - 48px))",
       },
       transitionDuration: {
         DEFAULT: "180ms",

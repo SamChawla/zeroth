@@ -134,6 +134,16 @@ def assess(fp) -> Compatibility:
         report.fix_prompt = build_fix_prompt(report, facts)
         return report
 
+    library = _check_library(findings, facts)
+    if library:
+        report = Compatibility(
+            "unsupported",
+            "Not deployable as-is — this is a library, not an application",
+            findings,
+        )
+        report.fix_prompt = build_fix_prompt(report, facts)
+        return report
+
     _check_runtime_version(findings, facts, base)
     _check_dependency_manifest(findings, base, present)
     _check_entrypoint(findings, facts, base)
@@ -146,6 +156,21 @@ def assess(fp) -> Compatibility:
     report = _verdict(findings, base, facts)
     report.fix_prompt = build_fix_prompt(report, facts)
     return report
+
+
+def _check_library(findings, facts) -> bool:
+    """A package published for installation has nothing to deploy."""
+    for f in facts.get("facts") or []:
+        if f.get("key") == "packaging" and f.get("value") == "library":
+            detail = ("This repository is packaging machinery around installable code - "
+                      "it is used inside an application, it does not run as one. "
+                      "Deploy an application that installs it instead.")
+            if "demo exists" in (f.get("evidence") or ""):
+                detail += " The example project inside is a development harness, not the product."
+            findings.append(Finding("blocker", "This is a library, not an application",
+                                    detail, f.get("evidence", "")))
+            return True
+    return False
 
 
 def _check_runtime_version(findings, facts, base) -> None:

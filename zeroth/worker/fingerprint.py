@@ -169,12 +169,45 @@ def build(repo_dir: Path, repo_name: str) -> Fingerprint:
     _detect_env(repo_dir, root_files, fp)
     _detect_procfile(repo_dir, root_files, fp)
     _apply_dependency_signals(fp)
+    _detect_library(repo_dir, root_files, fp)
 
     if not fp.ports:
         fp.ports = [8000 if fp.language == "python" else 3000]
         fp.add("port", str(fp.ports[0]), "default for detected runtime")
 
     return fp
+
+
+def _detect_library(repo_dir: Path, root_files: set[str], fp: Fingerprint) -> None:
+    """Is this a package meant for installation rather than an app meant to run?
+
+    A library repo analyzed as an application produces a fabricated start
+    command and a doomed deploy. The tells are packaging machinery at the root
+    with nothing runnable next to it: pyproject/setup plus MANIFEST.in or
+    publishing tools, and no manage.py, wsgi/asgi module, Procfile or main
+    entrypoint. Cited like every other fact so the verdict can be argued with.
+    """
+    packaging = root_files & {"pyproject.toml", "setup.py", "setup.cfg"}
+    if not packaging:
+        return
+    publish_markers = ("twine" in fp.dependencies or "build" in fp.dependencies
+                       or "MANIFEST.in" in root_files)
+    if not publish_markers:
+        return
+    runnable = (
+        "manage.py" in root_files or "Procfile" in root_files
+        or fp.entrypoints
+        or any((repo_dir / n).is_file() for n in ("wsgi.py", "asgi.py", "app.py", "main.py"))
+    )
+    if runnable:
+        return
+
+    evidence = f"{', '.join(sorted(packaging | (root_files & {'MANIFEST.in'})))}; no manage.py, wsgi/asgi, Procfile or main module at the project root"
+    demo = next((d.name for d in repo_dir.iterdir()
+                 if d.is_dir() and "example" in d.name.lower() and (d / "manage.py").is_file()), "")
+    if demo:
+        evidence += f"; a runnable demo exists in {demo}/"
+    fp.add("packaging", "library", evidence)
 
 
 def _detect_python(repo_dir: Path, root_files: set[str], fp: Fingerprint) -> None:

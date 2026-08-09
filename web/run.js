@@ -189,6 +189,7 @@ function listen(jobId) {
 function handle(msg, jobId) {
   switch (msg.event) {
     case "status":
+      if (!elapsedTimer && !["done", "failed", "ready"].includes(msg.status)) startClock();
       logLine(`[status] ${msg.status}${msg.detail ? " — " + msg.detail : ""}`);
       if (["validating", "ingesting"].includes(msg.status)) {
         setStage("fingerprint", "active", "Running");
@@ -505,8 +506,13 @@ function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
       <a href="#result-grid" class="btn btn-secondary">
         <span class="material-symbols-outlined text-[18px]">code</span> View configuration
       </a>
+      <button type="button" id="rerun" class="btn btn-secondary">
+        <span class="material-symbols-outlined text-[18px]">refresh</span> Run again
+      </button>
     </div>`;
   show("result-banner");
+  const rerun = $("rerun");
+  if (rerun) rerun.addEventListener("click", rerunCurrent);
 
   if (proven) {
     const badge = $("config-badge");
@@ -517,6 +523,22 @@ function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
 
   renderBootLog(proven);
   renderConfig();
+}
+
+/* A finished run is usually the point at which you want another one - after a
+   fix, or against the same repository again. Retyping the URL was the only way. */
+async function rerunCurrent() {
+  const url = $("repo-link") && $("repo-link").href;
+  if (!url || url.endsWith("#")) return;
+  const btn = $("rerun");
+  if (btn) btn.disabled = true;
+  try {
+    const id = await startJob(url);
+    location.href = `run.html?job=${encodeURIComponent(id)}`;
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    tryoutError(e.message);
+  }
 }
 
 /* ---------- try it out ---------- */
@@ -695,8 +717,15 @@ function hydrate(job) {
   $("repo-link").href = job.repo_url;
   if ($("repo-link-2")) $("repo-link-2").href = job.repo_url;
   document.title = `${job.repo_name || job.repo_url} — Zeroth`;
-  stopClock();
-  $("live-dot").className = TERMINAL_STATES.includes(job.status) ? "dot bg-fg3" : "dot bg-accent pulse";
+  // Only stop the clock for a run that has actually finished. A job still in
+  // flight, opened by URL, needs it running.
+  if (TERMINAL_STATES.includes(job.status)) {
+    stopClock();
+    $("live-dot").className = "dot bg-fg3";
+  } else {
+    startClock();
+    $("live-dot").className = "dot bg-accent pulse";
+  }
 
   if (job.compatibility) renderCompatibility(job.compatibility);
   if (job.fingerprint) {

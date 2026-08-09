@@ -119,7 +119,16 @@ class ZcliProvider:
         self._logged_in = False
 
     def create_project(self, import_yaml: str, project_name: str) -> str:
-        actual_name = (yaml.safe_load(import_yaml).get("project") or {}).get("name") or project_name
+        # The name in the YAML is NOT used. Projects are looked up by name after
+        # import, so honouring a repository's own project name means adopting
+        # whatever already answers to it - a leftover from a previous failed run,
+        # or worse, a real project of the user's with the same name. Zeroth then
+        # deploys into someone else's project and reports "Service [x] not
+        # found" when its services are absent. The name we pass is unique per
+        # run, so the lookup can only ever resolve to the project this call made.
+        doc = yaml.safe_load(import_yaml) or {}
+        doc.setdefault("project", {})["name"] = project_name
+        import_yaml = yaml.safe_dump(doc, sort_keys=False)
 
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
             fh.write(import_yaml)
@@ -131,12 +140,22 @@ class ZcliProvider:
             Path(path).unlink(missing_ok=True)
 
         if proc.returncode != 0:
-            # Both streams: zcli narrates progress on stdout and puts the
-            # actual cause on stderr, and reading only one loses half the story.
+            # An import can fail AFTER creating the project - services were
+            # created, then something later in the queue failed. Raising without
+            # cleaning up strands that project, which is exactly what the
+            # teardown guarantee is supposed to prevent. Best effort: it must
+            # not mask the original error.
+            self._destroy_by_name(project_name)
             raise ZcliError(self._scrub(
                 "import failed: " + "\n".join(x for x in (proc.stdout.strip(), proc.stderr.strip()) if x)))
 
-        return self._find_project_id(actual_name)
+        return self._find_project_id(project_name)
+
+    def _destroy_by_name(self, name: str) -> None:
+        try:
+            self.destroy(self._find_project_id(name))
+        except Exception:  # noqa: BLE001 - cleanup must never raise
+            pass
 
     def _find_project_id(self, name: str) -> str:
         proc = self._run(["project", "list"], timeout=30)

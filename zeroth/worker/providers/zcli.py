@@ -173,6 +173,16 @@ class ZcliProvider:
 
         return self._find_project_id(project_name)
 
+    def _commit_config(self, repo_dir: Path) -> None:
+        """Best effort: make the written zerops.yml part of the tree push reads."""
+        if not (repo_dir / ".git").exists():
+            return
+        for args in (["add", "-A"],
+                     ["-c", "user.name=zeroth", "-c", "user.email=zeroth@localhost",
+                      "commit", "-m", "zeroth: configuration under verification", "--no-verify"]):
+            subprocess.run(["git", "-C", str(repo_dir), *args],
+                           capture_output=True, text=True, timeout=30)
+
     def _destroy_by_name(self, name: str) -> None:
         try:
             self.destroy(self._find_project_id(name))
@@ -218,11 +228,19 @@ class ZcliProvider:
         if not targets:
             targets = [(setup, setup) for setup in setups]
 
+        # `zcli push` runs the platform's build pipeline; `zcli service deploy`
+        # ships the directory as an ALREADY-BUILT artifact, so buildCommands
+        # never ran and every deploy died server-side with nothing but a
+        # support id. Bisected on a one-file Flask app: identical yaml fails
+        # via service deploy and boots via push. push reads committed state,
+        # so the zerops.yml written a moment ago is committed first.
+        self._commit_config(repo_dir)
+
         log_chunks = []
         for service, setup in targets:
             proc = self._run(
-                ["service", "deploy", service, "-P", project_id, "--setup", setup,
-                 "--working-dir", str(repo_dir)],
+                ["push", service, "-P", project_id, "--setup", setup,
+                 "--workingDir", str(repo_dir)],
                 timeout=settings.deploy_timeout_s,
             )
             log_chunks.append(f"--- {service} (setup: {setup}) ---\n{proc.stdout}\n{proc.stderr}")
@@ -237,12 +255,14 @@ class ZcliProvider:
                 )
 
         combined = self._scrub("\n".join(log_chunks))
-        url = self._public_url(project_id, [svc for svc, _ in targets])
-        return DeployResult(
-            ok=True, phase="runtime", project_id=project_id,
-            logs=combined[-8000:], url=url,
-            verification={"source": "zcli", "deployed_setups": setups, "url": url},
-        )
+        # A build that succeeded and a deploy that activated still is not the
+        # claim being sold. "Verified" means it answers, so the deploy path
+        # ends the same way the git-build path does: polling the URL.
+        probe = self.await_git_build(project_id, [svc for svc, _ in targets])
+        probe.logs = (combined + "\n" + probe.logs)[-8000:]
+        if probe.ok:
+            probe.verification["deployed_setups"] = setups
+        return probe
 
 
     def await_git_build(self, project_id: str, services: list[str]) -> DeployResult:

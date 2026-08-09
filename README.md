@@ -9,7 +9,11 @@ when the build fails.
 Most generators hand you plausible YAML. Plausible YAML that does not boot is
 worse than none, so Zeroth proves it.
 
-**Live demo:** [web-2b21-8080.prg1.zerops.app](https://web-2b21-8080.prg1.zerops.app) · **API:** [api-2b21-8000.prg1.zerops.app](https://api-2b21-8000.prg1.zerops.app)
+**Live demo:** [web-2b21-8080.prg1.zerops.app](https://web-2b21-8080.prg1.zerops.app) · **Walkthrough:** [youtu.be/SF26EZozazY](https://youtu.be/SF26EZozazY)
+
+![The Zeroth landing screen: a repository URL field, and the four constraints every run is held to](docs/screenshots/landing.png)
+
+*One field. The constraints under it are enforced at submit time, not promised.*
 
 ---
 
@@ -87,6 +91,11 @@ flowchart TD
     N -->|yes| O[Verified bundle + DEPLOYMENT.md]
 ```
 
+![The three stage cards — analyze, generate, verify — each collapsed with its own status, above the pathfinder replay timeline](docs/screenshots/pipeline-stages.png)
+
+*The same three stages in the UI. Each collapses to its own status, and the
+replay timeline behind them keeps every event a run emitted.*
+
 ### Why verification is opt-in
 
 Deploying costs minutes and credits, and most people want to read the
@@ -134,6 +143,16 @@ sequenceDiagram
     T-->>W: zerops-project-import.yaml + zerops.yaml
 ```
 
+![The generated zerops-project-import.yaml, marked verified, beside the services panel](docs/screenshots/generated-config.png)
+
+*What the render produces. The header is not decoration — it names the
+repository it came from and the command that reproduces it.*
+
+![The "Why these services" panel: the api service traced back to language, framework, server and port](docs/screenshots/why-services.png)
+
+*Every generated service traces back to the evidence that produced it. This is
+what "facts, not source" buys you — a configuration that can be argued with.*
+
 ### Repair — diagnosis grounded in real logs
 
 When a verification attempt fails, the failure is classified, the build log is
@@ -175,6 +194,12 @@ with AI** produces a concrete unified diff for you to apply. That button is the
 single exception to "no source code reaches the model" — it reads only the
 files the findings cite, says so on the label, and hands the diff to you.
 Zeroth never writes to your repository either way.
+
+![The deployability verdict: "Deployable with 1 change", two findings, and the generated fix prompt ready to copy](docs/screenshots/verdict.png)
+
+*An advisory verdict — deployable, with one thing worth knowing first. The fix
+prompt below the findings is generated from those findings and their evidence,
+and goes straight into whatever agent you already use.*
 
 It checks runtime support and version availability, whether a dependency
 manifest exists, whether anything declares how to start the application, port
@@ -229,6 +254,11 @@ Stage transitions are published to Valkey and relayed to the browser over SSE,
 with a replay buffer so a page that connects late still sees the run from the
 top. A finished run is rebuilt from the stored record rather than the event
 stream, so a shared link keeps working long after the buffer has expired.
+
+![The event log transcript: every stage transition from cloning to verified, timestamped](docs/screenshots/event-log.png)
+
+*The whole run as it was emitted, timestamped. Note the four-and-a-half minute
+gap at `building and deploying api` — a real platform build, not a spinner.*
 
 ---
 
@@ -334,6 +364,11 @@ logs are fetched and fed to the repair loop, so a diagnosis reads a traceback
 instead of guessing about a URL. Every repair records a **unified diff** of
 what it changed, persisted per attempt and rendered in the run — the AI's
 change as evidence, not prose.
+
+![The "Deployment verified" card: healthy, one attempt, ephemeral environment, 10 of 10 checks passed](docs/screenshots/verified.png)
+
+*The claim, with its receipts — and the admission that the URL it answered on
+is already gone. The evidence is the trail, not a live link.*
 
 ## Pathfinder replay
 

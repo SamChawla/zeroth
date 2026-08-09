@@ -177,6 +177,13 @@ def process_verify(job_id: str, target: str) -> None:
         elif source == "official":
             override = _artifact(db, job, "official_zerops_yaml")
             import_override = _artifact(db, job, "official_import_yaml")
+        # The deploy ahead can run for many minutes. Any read since the last
+        # commit has opened a transaction, and Postgres kills connections that
+        # sit idle in one - after which every write here fails, including the
+        # one in the error handler, and the job hangs in "verifying" forever.
+        # Close the transaction now and start fresh afterwards.
+        db.commit()
+
         result = pathfinder.run(
             job.id, job.repo_url, repo_dir, job.manifest,
             lambda ev, payload: bus.publish(job.id, ev, payload),
@@ -186,6 +193,11 @@ def process_verify(job_id: str, target: str) -> None:
             import_yaml_override=import_override,
             framework=(job.fingerprint or {}).get("framework") or "",
         )
+
+        # The connection may have died while the deploy ran; start clean
+        # rather than inheriting a poisoned session.
+        db.rollback()
+        job = db.get(Job, job_id)
 
         manifest = result.manifest
         job.manifest = manifest
@@ -199,14 +211,23 @@ def process_verify(job_id: str, target: str) -> None:
             job.kept_project_id = result.project_id
         _persist_attempts(db, job, result.attempts)
 
-        if result.verified:
-            import_yaml = render_import_yaml(manifest, job.repo_url, verified=True)
-            zerops_yaml = render_zerops_yaml(manifest, job.repo_url)
-            _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
-            _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
-            bus.publish(job.id, "config", {
-                "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
-            })
+        if result.verified and source == "generated":
+            # Re-stamp the artifacts as verified. Only for the generated config:
+            # a repository-config verification proved THEIR files, and there is
+            # nothing of ours to restamp. And never let this bookkeeping fail
+            # the run - the verification already happened; a rendering problem
+            # here is a footnote, not a verdict.
+            try:
+                framework = (job.fingerprint or {}).get("framework") or ""
+                import_yaml = render_import_yaml(manifest, job.repo_url, verified=True)
+                zerops_yaml = render_zerops_yaml(manifest, job.repo_url, framework)
+                _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
+                _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
+                bus.publish(job.id, "config", {
+                    "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
+                })
+            except Exception:  # noqa: BLE001
+                log.exception("could not restamp artifacts for job %s", job_id)
 
         simulated = _is_simulated(provider)
         _write_report(db, job, manifest, result.verified, result.attempts, simulated)
@@ -302,6 +323,13 @@ def _write_report(db, job: Job, manifest: dict, verified: bool = False, attempts
 
 def _fail(db, job_id: str, exc: Exception) -> None:
     log.exception("job %s failed", job_id)
+    # The session may be unusable - a dead connection is a common way to get
+    # here. Rolling back first is what lets the failure actually be recorded
+    # instead of raising a second time and stranding the job mid-status.
+    try:
+        db.rollback()
+    except Exception:  # noqa: BLE001
+        pass
     job = db.get(Job, job_id)
     if not job:
         return

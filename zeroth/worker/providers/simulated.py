@@ -52,6 +52,9 @@ class SimulatedProvider:
             verification={"http": 200, "health": "passed", "errors_in_log": 0},
         )
 
+    def await_git_build(self, project_id: str, services) -> DeployResult:
+        return self.deploy(project_id, None, "")
+
     def logs(self, project_id: str, service: str = "") -> str:
         return "[simulated] no additional logs"
 

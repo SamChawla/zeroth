@@ -36,12 +36,14 @@ Everything below is confirmed against a real project on a live account
   channel has more than the CLI exposes here).
 """
 import os
+import time
 import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
+import httpx
 import yaml
 
 from zeroth.config import settings
@@ -126,16 +128,36 @@ class ZcliProvider:
         # deploys into someone else's project and reports "Service [x] not
         # found" when its services are absent. The name we pass is unique per
         # run, so the lookup can only ever resolve to the project this call made.
-        doc = yaml.safe_load(import_yaml) or {}
-        doc.setdefault("project", {})["name"] = project_name
-        import_yaml = yaml.safe_dump(doc, sort_keys=False)
+        # Rewrite the name in the TEXT, not by re-serialising. Round-tripping
+        # through yaml.safe_dump drops comments, and a leading
+        # `# zeropsPreprocessor=on` is not a comment to Zerops - it is what
+        # enables <@generateRandomString(...)> macros. Losing it leaves those
+        # macros as literal strings and the import fails with a support id and
+        # nothing else. Confirmed against a repository that uses them.
+        import_yaml = _rename_project(import_yaml, project_name)
 
         with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
             fh.write(import_yaml)
             path = fh.name
 
+        # An import that builds from git runs a real build inside the import, so
+        # it needs the build budget, not the provisioning one. A plain import is
+        # quick either way; this ceiling only matters when a build is happening.
+        budget = settings.provision_timeout_s
+        if "buildFromGit" in import_yaml:
+            budget = max(budget, settings.deploy_timeout_s)
+
         try:
-            proc = self._run(["project", "project-import", path], timeout=settings.provision_timeout_s)
+            proc = self._run(["project", "project-import", path], timeout=budget)
+        except subprocess.TimeoutExpired:
+            # A timeout leaves a real project behind exactly like a failed
+            # import does, and it used to leak because cleanup only ran on a
+            # non-zero exit code.
+            self._destroy_by_name(project_name)
+            raise ZcliError(
+                f"import did not finish within {budget}s. A buildFromGit import runs the "
+                f"application's full build, which can exceed this budget."
+            ) from None
         finally:
             Path(path).unlink(missing_ok=True)
 
@@ -222,6 +244,43 @@ class ZcliProvider:
             verification={"source": "zcli", "deployed_setups": setups, "url": url},
         )
 
+
+    def await_git_build(self, project_id: str, services: list[str]) -> DeployResult:
+        """Verify a buildFromGit import by checking the application answers.
+
+        A buildFromGit import already builds and deploys the application - the
+        import command blocks until its queued processes finish. Deploying our
+        local clone on top of that was both redundant and a different claim:
+        the repository says "import this and it runs", so the honest check is
+        whether it now answers over HTTP.
+        """
+        url = self._public_url(project_id, services)
+        if not url:
+            return DeployResult(
+                ok=False, phase="runtime", project_id=project_id,
+                error="the import finished but no public URL exists for the runtime service",
+            )
+
+        last = "no response"
+        deadline = time.time() + 180  # boot + readiness, not another build
+        while time.time() < deadline:
+            try:
+                resp = httpx.get(url, timeout=10, follow_redirects=True)
+                if resp.status_code < 500:
+                    return DeployResult(
+                        ok=True, phase="runtime", project_id=project_id, url=url,
+                        logs=f"GET {url} -> {resp.status_code}",
+                        verification={"source": "zcli", "http": resp.status_code, "url": url},
+                    )
+                last = f"HTTP {resp.status_code}"
+            except httpx.HTTPError as exc:
+                last = str(exc)[:200]
+            time.sleep(10)
+        return DeployResult(
+            ok=False, phase="runtime", project_id=project_id, url=url,
+            error=f"the application never answered at {url} ({last})",
+        )
+
     def _public_url(self, project_id: str, setups: list[str]) -> str:
         proc = self._run(["project", "env", "-P", project_id], timeout=30)
         if proc.returncode != 0:
@@ -258,3 +317,25 @@ def _first_error(logs: str) -> str:
         if re.search(r"error|exception|failed|refused|denied", line, re.I):
             return line.strip()[:400]
     return ""
+
+def _rename_project(import_yaml: str, name: str) -> str:
+    """Set project.name, preserving every other byte of the document."""
+    out, in_project, renamed = [], False, False
+    for line in import_yaml.splitlines():
+        stripped = line.strip()
+        if not renamed and re.match(r"^project:\s*$", line):
+            in_project = True
+            out.append(line)
+            continue
+        if in_project and not renamed and re.match(r"^\s+name:\s", line):
+            indent = line[: len(line) - len(line.lstrip())]
+            out.append(f"{indent}name: {name}")
+            renamed = True
+            continue
+        # Any top-level key ends the project block.
+        if in_project and stripped and not line[0].isspace() and not stripped.startswith("#"):
+            in_project = False
+        out.append(line)
+    if not renamed:
+        out.insert(0, f"project:\n  name: {name}")
+    return "\n".join(out) + "\n"

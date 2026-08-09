@@ -43,6 +43,51 @@ class PathfinderResult:
     project_id: str = ""
 
 
+
+
+def _pin_setups(import_yaml: str, zerops_yaml: str) -> str:
+    """Give every buildFromGit service an explicit zeropsSetup.
+
+    A setup is matched to a service by hostname. When a repository names its
+    setups something else - prod/dev against a service called tlak - the
+    platform's build has no setup to use and the import fails the moment
+    stack.build is queued, reporting only a support id. zeropsSetup is the
+    documented way to say which one, and it is only valid alongside
+    buildFromGit, which is exactly the case here.
+    """
+    try:
+        doc = yaml.safe_load(import_yaml) or {}
+        setups = [s["setup"] for s in ((yaml.safe_load(zerops_yaml) or {}).get("zerops") or [])]
+    except (yaml.YAMLError, KeyError, TypeError):
+        return import_yaml
+    if not setups:
+        return import_yaml
+
+    changed = False
+    for svc in doc.get("services") or []:
+        if not svc.get("buildFromGit") or svc.get("zeropsSetup"):
+            continue
+        host = svc.get("hostname")
+        if host in setups:
+            continue  # the convention already resolves it
+        # Prefer a production-looking setup over a development one; a
+        # verification run should test what the repository ships to users.
+        svc["zeropsSetup"] = next(
+            (s for s in setups if s in ("prod", "production")), setups[0])
+        changed = True
+    if not changed:
+        return import_yaml
+    # Re-serialising drops comments, and the leading `# zeropsPreprocessor=on`
+    # is not decorative - it is what turns <@generateRandomString(...)> into a
+    # value instead of a literal. Carry the leading comment block across.
+    header = []
+    for line in import_yaml.splitlines():
+        if line.strip().startswith("#") or not line.strip():
+            header.append(line)
+            continue
+        break
+    return "\n".join(header + [yaml.safe_dump(doc, sort_keys=False)])
+
 def _deploy_targets(import_yaml: str, zerops_yaml: str) -> list[tuple[str, str]]:
     """Which service gets deployed with which setup.
 
@@ -112,11 +157,13 @@ def run(
         started = time.time()
 
         try:
-            import_yaml = import_yaml_override or render_import_yaml(current, repo_url)
             # Verifying the repository's own configuration means deploying it
             # unchanged - patching it would prove something the repository does
             # not actually claim.
             zerops_yaml = zerops_yaml_override or render_zerops_yaml(current, repo_url, framework)
+            import_yaml = import_yaml_override or render_import_yaml(current, repo_url)
+            if import_yaml_override:
+                import_yaml = _pin_setups(import_yaml, zerops_yaml)
 
             on_event("stage", {"stage": "provisioning", "attempt": attempt_no})
             project_name = f"zeroth-{job_id[:8]}-{attempt_no}"
@@ -124,10 +171,13 @@ def run(
 
             on_event("stage", {"stage": "deploying", "attempt": attempt_no,
                                "project_id": project_id})
-            result = provider.deploy(
-                project_id, repo_dir, zerops_yaml,
-                targets=_deploy_targets(import_yaml, zerops_yaml),
-            )
+            targets = _deploy_targets(import_yaml, zerops_yaml)
+            if import_yaml_override and "buildFromGit" in import_yaml:
+                # The import already built and deployed from git. What is left
+                # to prove is that the application answers.
+                result = provider.await_git_build(project_id, [svc for svc, _ in targets])
+            else:
+                result = provider.deploy(project_id, repo_dir, zerops_yaml, targets=targets)
 
             if result.ok:
                 live_url = result.url

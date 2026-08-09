@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     # demonstrates the repair loop, three mostly demonstrates patience.
     max_attempts: int = 2
     provision_timeout_s: int = 120
-    deploy_timeout_s: int = 240
+    # A real application build - a Next.js production build, say - does not fit
+    # in four minutes on a small builder.
+    deploy_timeout_s: int = 600
     max_concurrent_runs: int = 2
     rate_limit_per_hour: int = 10
 

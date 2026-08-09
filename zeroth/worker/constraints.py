@@ -87,8 +87,11 @@ def _check_os_match(problems, name, build, run) -> None:
 def _check_ports(problems, name, run) -> None:
     for port in run.get("ports") or []:
         number = port.get("port")
-        if not isinstance(number, int) or not (1 <= number <= 65535):
-            problems.append(f"{name}: port {number!r} is not a valid port number.")
+        if not isinstance(number, int) or not (10 <= number <= 65435):
+            problems.append(
+                f"{name}: port {number!r} is outside the usable range. Zerops reserves "
+                f"everything below 10 and above 65435, including 80 and 443 for SSL "
+                f"termination.")
 
 
 def _check_next_standalone(problems, name, run) -> None:

@@ -48,8 +48,21 @@ def create_job(body: JobCreate, request: Request, db: Session = Depends(get_sess
         raise HTTPException(400, str(exc)) from exc
 
     job = Job(repo_url=body.repo_url.strip(), repo_name=f"{owner}/{repo}")
+
+    if body.llm_api_key:
+        provider = body.llm_provider or "custom"
+        if provider == "custom" and not (body.llm_base_url and body.llm_model):
+            raise HTTPException(400, "A custom BYOK provider needs both a base URL and a model.")
+        job.llm_provider = provider  # non-secret label; the key goes to Valkey only
     db.add(job)
     db.commit()
+    if body.llm_api_key:
+        bus.stash_llm(job.id, {
+            "provider": job.llm_provider,
+            "api_key": body.llm_api_key.strip(),
+            "model": (body.llm_model or "").strip(),
+            "base_url": (body.llm_base_url or "").strip(),
+        })
     bus.rate_consume(ip)
     bus.enqueue(job.id)
     return job
@@ -83,14 +96,17 @@ def verify_job(
     # said will not work costs minutes and credits to reproduce a known answer,
     # so "not deployable" is refused outright and "needs changes" requires the
     # caller to have seen the findings and said yes anyway.
-    verdict = (job.compatibility or {}).get("verdict")
-    if verdict == "unsupported":
+    compat = job.compatibility or {}
+    deployable = compat.get("deployable") or (
+        "no" if compat.get("verdict") == "unsupported" else "with_ack")
+    if deployable == "no":
         raise HTTPException(
             409,
-            "This repository has no Zerops runtime, so there is nothing to deploy it "
-            "onto. The deployability check explains what is missing.",
+            "The deployability check found problems that make this deployment "
+            "certain to fail, so running it is disabled. Fix the findings - the "
+            "check hands you the exact prompt - and analyze again.",
         )
-    if verdict == "needs_changes" and not body.acknowledge:
+    if deployable == "with_ack" and not body.acknowledge:
         changes = [f for f in (job.compatibility or {}).get("findings", [])
                    if f.get("level") == "change"]
         raise HTTPException(

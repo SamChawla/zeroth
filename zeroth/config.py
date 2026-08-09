@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # publish includes the token-accepting verify endpoint.
     expose_api_docs: bool = False
 
+    # Per-run LLM token ceiling when running on the house keys. BYOK runs
+    # are exempt: the key's owner decides when it is exhausted.
+    llm_token_budget: int = 60_000
+
     max_repo_mb: int = 50
     # Verification is opt-in and someone is watching it happen, so it is tuned
     # for a bounded wait rather than maximum persistence: two attempts still

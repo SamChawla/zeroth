@@ -43,6 +43,26 @@ def dequeue(timeout: int = 5) -> dict | None:
     return {"job": str(payload), "task": "analyze"}
 
 
+def stash_llm(job_id: str, byok: dict, ttl: int = 14_400) -> None:
+    """Hold a run's BYOK LLM credentials. Same rules as the Zerops token -
+    never Postgres, never artifacts - but multi-read: one run makes several
+    model calls (analyze, then each repair), so it is deleted when the job
+    reaches a terminal state rather than on first read."""
+    client().set(f"zeroth:llm:{job_id}", json.dumps(byok), ex=ttl)
+
+
+def get_llm(job_id: str) -> dict | None:
+    raw = client().get(f"zeroth:llm:{job_id}")
+    try:
+        return json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def drop_llm(job_id: str) -> None:
+    client().delete(f"zeroth:llm:{job_id}")
+
+
 def stash_token(job_id: str, token: str, ttl: int = 900) -> None:
     """Hold a user's Zerops token just long enough for the worker to pick it up.
 

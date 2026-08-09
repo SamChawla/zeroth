@@ -130,27 +130,102 @@ def _parse_python_deps(text: str) -> list[str]:
     return deps
 
 
+
+# Directory names that conventionally hold the application when it is not at
+# the root. A tie-breaker, not a filter - anything with a manifest is a
+# candidate.
+_PREFERRED_ROOTS = ("src", "app", "backend", "server", "api", "web", "service")
+
+_SKIP_DIRS = {"node_modules", "vendor", "dist", "build", "docs", "test", "tests",
+              "examples", "example", ".git", "__pycache__"}
+
+
+
+# Entry-point names that identify a language even with no manifest present.
+_SOURCE_HINTS = {
+    "python": ("manage.py", "app.py", "main.py", "wsgi.py", "asgi.py"),
+    "nodejs": ("server.js", "index.js", "app.js"),
+    "go": ("main.go",),
+    "php": ("index.php",),
+}
+
+
+def _detect_language_from_sources(repo_dir: Path, fp: Fingerprint) -> None:
+    """Best-effort language from source files, cited like everything else."""
+    dirs = [repo_dir] + [d for d in repo_dir.iterdir()
+                         if d.is_dir() and not d.name.startswith(".")
+                         and d.name.lower() not in _SKIP_DIRS]
+    for d in dirs[:8]:
+        try:
+            names = {f.name for f in d.iterdir() if f.is_file()}
+        except OSError:
+            continue
+        for lang, hints in _SOURCE_HINTS.items():
+            hit = sorted(names & set(hints))
+            if hit:
+                where = "" if d == repo_dir else f"{d.name}/"
+                fp.language = lang
+                fp.add("language", lang, f"{where}{hit[0]} present (no manifest anywhere)")
+                if not fp.entrypoints:
+                    fp.entrypoints = [f"{where}{hit[0]}"]
+                return
+
+def _find_project_roots(repo_dir: Path) -> list[Path]:
+    """Directories (1-2 levels down) containing a dependency manifest, ranked.
+
+    Shallower wins, then a conventional name, then more manifest files. The
+    example/test/vendor family is skipped: a manifest in tests/ describes the
+    tests, not the product.
+    """
+    found = []
+    for level1 in repo_dir.iterdir():
+        if not level1.is_dir() or level1.name.startswith(".") or level1.name.lower() in _SKIP_DIRS:
+            continue
+        subdirs = [d for d in level1.iterdir()
+                   if d.is_dir() and not d.name.startswith(".") and d.name.lower() not in _SKIP_DIRS]
+        for depth, candidate in [(1, level1)] + [(2, d) for d in subdirs]:
+            try:
+                names = {f.name for f in candidate.iterdir() if f.is_file()}
+            except OSError:
+                continue
+            manifests = names & set(MANIFEST_FILES)
+            if manifests:
+                preferred = 0 if candidate.name.lower() in _PREFERRED_ROOTS else 1
+                found.append((depth, preferred, -len(manifests), candidate))
+    found.sort(key=lambda t: t[:3])
+    return [t[3] for t in found]
+
 def build(repo_dir: Path, repo_name: str) -> Fingerprint:
     fp = Fingerprint(repo_name=repo_name)
     root_files = {p.name for p in repo_dir.iterdir() if p.is_file()}
 
-    # A very common shape: nothing but a README at the root, and the whole
-    # application one directory down. Judging the root alone calls such a
+    # A very common shape: nothing but a README at the root and the whole
+    # application somewhere below. Judging the root alone calls such a
     # repository "unknown", which is wrong in the way that matters most - the
-    # verdict. If the root has no manifest and exactly one subdirectory does,
-    # analyze that subdirectory as the project root and say so.
+    # verdict. Search one and two levels down, rank the candidates, pick the
+    # best and record the others as evidence so the choice can be argued with.
     if not (root_files & set(MANIFEST_FILES)):
-        candidates = [
-            d for d in repo_dir.iterdir()
-            if d.is_dir() and not d.name.startswith(".")
-            and {f.name for f in d.iterdir() if f.is_file()} & set(MANIFEST_FILES)
-        ]
-        if len(candidates) == 1:
-            repo_dir = candidates[0]
-            fp.project_subdir = candidates[0].name
-            fp.add("project_root", candidates[0].name,
-                   f"no manifest at the repository root; {candidates[0].name}/ has one")
+        candidates = _find_project_roots(repo_dir)
+        if candidates:
+            chosen = candidates[0]
+            rel = str(chosen.relative_to(repo_dir))
+            others = ", ".join(str(c.relative_to(repo_dir)) for c in candidates[1:4])
+            fp.project_subdir = rel
+            fp.add("project_root", rel,
+                   f"no manifest at the repository root; {rel}/ has one"
+                   + (f" (also considered: {others})" if others else ""))
+            repo_dir = chosen
             root_files = {p.name for p in repo_dir.iterdir() if p.is_file()}
+        else:
+            searched = ", ".join(sorted(
+                d.name + "/" for d in repo_dir.iterdir()
+                if d.is_dir() and not d.name.startswith("."))[:12]) or "no subdirectories"
+            fp.add("manifest_search", "none-found", searched)
+            # No manifest anywhere, but the sources still say what this is.
+            # Without this, the verdict degrades to "unknown runtime" when the
+            # honest, actionable answer is "python app with no requirements
+            # file" - a different problem with a different fix.
+            _detect_language_from_sources(repo_dir, fp)
 
     fp.present_files = sorted(
         f for f in root_files if f in MANIFEST_FILES + CONFIG_FILES

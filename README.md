@@ -161,11 +161,17 @@ flowchart LR
 That is the first question anyone actually has, so it is the first one Zeroth
 answers — before spending a model call on *how* to deploy it.
 
-| Verdict | Meaning |
-|---|---|
-| **Deployable** | Runs on Zerops as it stands |
-| **Needs changes** | Will deploy, but something should be fixed first — each change is named |
-| **Not deployable** | No Zerops runtime for this stack |
+| Verdict | Deploy button | Meaning |
+|---|---|---|
+| **Deployable** | enabled | Runs on Zerops as it stands |
+| **Needs changes** (advisory) | "Deploy anyway" | May still succeed — inferred values are shown for judgement |
+| **Needs changes** (fatal) | **disabled** | The build cannot succeed as-is (bad encoding, no manifest anywhere); running would only prove it |
+| **Not deployable** | **disabled** | No Zerops runtime, or a library rather than an application |
+
+When anything actionable is found, Zeroth writes a **fix prompt** — the findings,
+their evidence, and the platform constraints that matter — ready to paste into
+your own coding agent. Zeroth never edits your repository; it tells you
+precisely what to change and verifies again when you have.
 
 It checks runtime support and version availability, whether a dependency
 manifest exists, whether anything declares how to start the application, port
@@ -316,6 +322,23 @@ makes the repair loop auditable after the fact.
 
 ---
 
+## Pathfinder replay
+
+Every state transition a run makes is persisted as a structured event, so a
+finished run replays as a timeline — offsets, glyphs, failures and repairs in
+order — long after the live stream is gone. The run page rebuilds the whole
+story from the stored record: verdict, evidence, attempts, configuration, and
+what got torn down.
+
+## Bring your own key
+
+A run can carry its own OpenAI-compatible LLM key (OpenAI, Groq, OpenRouter,
+or any compatible endpoint — more presets coming). The key is used for that
+run only: held under a short TTL, read by the worker, discarded when the run
+settles, never written to the database, artifacts or logs. Runs on the house
+keys get a per-run token budget; BYOK runs are exempt — your key runs until
+your provider says otherwise.
+
 ## HTTP API
 
 | Method | Path | Purpose |
@@ -362,6 +385,17 @@ empty service-level variable silently wins over a populated project-level one,
 and the application reports no provider configured. Either fill the values in at
 the service level, or delete the empty service-level entries so the project
 values resolve.
+
+## Tests
+
+```bash
+npm i -D @playwright/test
+npx playwright install chromium        # or CHROME_PATH=/path/to/chrome
+BASE_URL=https://<web-subdomain> npx playwright test
+```
+
+The E2E suite is read-only by design — it never presses deploy, so running it
+costs nothing and cannot leave infrastructure behind.
 
 ## Environment Variables
 

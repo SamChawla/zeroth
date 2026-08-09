@@ -21,6 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script src="tailwind-config.js"></script>
 <link rel="stylesheet" href="style.css"/>
+<link rel="stylesheet" href="status.css"/>
 </head>
 <body class="font-sans antialiased min-h-screen flex flex-col">
 
@@ -88,6 +89,44 @@
       </form>
       <p class="text-sm text-danger mt-3 hidden" id="err" role="alert"></p>
 
+      <details class="collapse mt-5 text-left rounded-card border border-edge bg-surface2">
+        <summary class="collapse-toggle !py-3">
+          <span class="collapse-toggle__title text-sm">Bring your own LLM key</span>
+          <span class="collapse-toggle__meta"><span class="pill pill-idle">optional</span><span class="chev" aria-hidden="true"></span></span>
+        </summary>
+        <div class="px-4 pb-4 flex flex-col gap-3">
+          <p class="text-sm text-fg2">
+            Used for this run only — held under a short TTL, never stored, discarded when the run
+            settles. BYOK runs skip the shared token budget: your key runs until your provider says stop.
+            Currently supported: OpenAI, Groq, OpenRouter, or any OpenAI-compatible endpoint — more coming.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-fg2">Provider</span>
+              <select id="byok-provider" class="field px-3 py-2 text-sm">
+                <option value="">Use Zeroth's keys (budgeted)</option>
+                <option value="openai">OpenAI</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="custom">Custom (OpenAI-compatible)</option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-fg2">API key</span>
+              <input id="byok-key" type="password" autocomplete="off" spellcheck="false" class="field px-3 py-2 font-mono text-sm" placeholder="sk-..."/>
+            </label>
+            <label class="flex flex-col gap-1 text-sm">
+              <span class="text-fg2">Model <span class="text-fg3">(optional for presets)</span></span>
+              <input id="byok-model" type="text" autocomplete="off" spellcheck="false" class="field px-3 py-2 font-mono text-sm" placeholder="preset default"/>
+            </label>
+            <label class="flex flex-col gap-1 text-sm" id="byok-baseurl-row" hidden>
+              <span class="text-fg2">Base URL</span>
+              <input id="byok-baseurl" type="url" autocomplete="off" spellcheck="false" class="field px-3 py-2 font-mono text-sm" placeholder="https://api.example.com/v1"/>
+            </label>
+          </div>
+        </div>
+      </details>
+
       <ul class="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-6 text-sm text-fg2">
         <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Public GitHub / GitLab</li>
         <li class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[15px] text-success">check</span> Up to 50&nbsp;MB</li>
@@ -99,16 +138,13 @@
 
   <!-- The empty state used to be an input and a lot of nothing. Real previous
        runs are both context and proof, and they cost one request already made. -->
-  <section id="recent" class="flex flex-col gap-3">
-    <div class="flex items-end justify-between gap-4">
-      <div>
-        <h2 class="text-lg font-semibold tracking-tight">Recent runs</h2>
-        <p class="text-sm text-fg2 mt-0.5">The last few repositories through the pipeline, with whatever result they got.</p>
-      </div>
-      <span class="font-mono text-xs text-fg3" id="gallery-summary"></span>
-    </div>
-
-    <div class="card overflow-hidden">
+  <section id="recent" class="card">
+    <button type="button" class="collapse-toggle" aria-expanded="false" aria-controls="panel-recent">
+      <span class="collapse-toggle__title">Recent runs</span>
+      <span class="collapse-toggle__meta"><span class="font-mono text-xs text-fg3" id="gallery-summary"></span><span class="chev" aria-hidden="true"></span></span>
+    </button>
+    <div id="panel-recent" class="collapse-panel"><div class="collapse-panel__inner"><div class="collapse-panel__pad pt-2">
+    <div class="overflow-hidden rounded-card border border-edge">
       <div id="gallery-empty" class="p-8 text-center">
         <div class="step-icon mx-auto mb-3"><span class="material-symbols-outlined text-[20px]">inbox</span></div>
         <p class="font-medium mb-1">Nothing has run yet</p>
@@ -131,6 +167,7 @@
         </table>
       </div>
     </div>
+    </div></div></div>
   </section>
 
   <p class="card p-4 text-sm text-fg2 hidden" id="viewing-note">
@@ -207,17 +244,16 @@
 
       <div class="xl:col-span-3 flex flex-col gap-5">
 
-        <section class="card p-6" id="stage-fingerprint">
-          <div class="flex items-start justify-between gap-4 mb-4">
-            <div class="flex gap-3.5">
-              <div class="step-icon"><span class="material-symbols-outlined text-[20px]">manage_search</span></div>
-              <div>
-                <div class="step-num mb-0.5">01 · ANALYZE</div>
-                <h2 class="font-semibold">Repository fingerprint</h2>
-              </div>
+        <section class="card" id="stage-fingerprint">
+          <button type="button" class="collapse-toggle" aria-expanded="false" aria-controls="panel-analyze">
+            <div class="step-icon"><span class="material-symbols-outlined text-[20px]">manage_search</span></div>
+            <div>
+              <div class="step-num mb-0.5">01 · ANALYZE</div>
+              <h2 class="font-semibold">Repository fingerprint</h2>
             </div>
-            <span class="pill pill-idle" id="stage-fingerprint-tag">Pending</span>
-          </div>
+            <span class="collapse-toggle__meta"><span class="pill pill-idle" id="stage-fingerprint-tag">Pending</span><span class="chev" aria-hidden="true"></span></span>
+          </button>
+          <div id="panel-analyze" class="collapse-panel"><div class="collapse-panel__inner"><div class="collapse-panel__pad">
           <!-- Driven entirely by real pipeline events; nothing here advances on a
                timer, so a stalled step stays visibly stalled. -->
           <div class="mb-4" id="checklist-analyze">
@@ -228,37 +264,37 @@
             <div class="check pending" id="chk-config"><span class="check-mark">○</span><span class="check-text text-sm">Configuration generated</span></div>
           </div>
           <div class="grid grid-cols-1 gap-3" id="evidence"></div>
+          </div></div></div>
         </section>
       </div>
 
       <div class="xl:col-span-5 flex flex-col gap-5">
-        <section class="card p-6" id="stage-reason">
-          <div class="flex items-start justify-between gap-4 mb-4">
-            <div class="flex gap-3.5">
-              <div class="step-icon"><span class="material-symbols-outlined text-[20px]">description</span></div>
-              <div>
-                <div class="step-num mb-0.5">02 · GENERATE</div>
-                <h2 class="font-semibold">Proposed architecture</h2>
-              </div>
+        <section class="card" id="stage-reason">
+          <button type="button" class="collapse-toggle" aria-expanded="false" aria-controls="panel-arch">
+            <div class="step-icon"><span class="material-symbols-outlined text-[20px]">description</span></div>
+            <div>
+              <div class="step-num mb-0.5">02 · GENERATE</div>
+              <h2 class="font-semibold">Proposed architecture</h2>
             </div>
-            <span class="pill pill-idle" id="stage-reason-tag">Pending</span>
-          </div>
-          <div id="services" class="flex flex-col gap-2.5"></div>
+            <span class="collapse-toggle__meta"><span class="pill pill-idle" id="stage-reason-tag">Pending</span><span class="chev" aria-hidden="true"></span></span>
+          </button>
+          <div id="panel-arch" class="collapse-panel"><div class="collapse-panel__inner"><div class="collapse-panel__pad">
+            <div id="services" class="flex flex-col gap-2.5"></div>
+          </div></div></div>
         </section>
       </div>
 
       <div class="xl:col-span-4 flex flex-col gap-5">
-        <section class="card p-6" id="stage-verify">
-          <div class="flex items-start justify-between gap-4 mb-4">
-            <div class="flex gap-3.5">
-              <div class="step-icon"><span class="material-symbols-outlined text-[20px]">verified</span></div>
-              <div>
-                <div class="step-num mb-0.5">03 · VERIFY</div>
-                <h2 class="font-semibold">Deployment</h2>
-              </div>
+        <section class="card" id="stage-verify">
+          <button type="button" class="collapse-toggle" aria-expanded="false" aria-controls="panel-deploy">
+            <div class="step-icon"><span class="material-symbols-outlined text-[20px]">verified</span></div>
+            <div>
+              <div class="step-num mb-0.5">03 · VERIFY</div>
+              <h2 class="font-semibold">Deployment</h2>
             </div>
-            <span class="pill pill-idle" id="stage-verify-tag">Pending</span>
-          </div>
+            <span class="collapse-toggle__meta"><span class="pill pill-idle" id="stage-verify-tag">Pending</span><span class="chev" aria-hidden="true"></span></span>
+          </button>
+          <div id="panel-deploy" class="collapse-panel"><div class="collapse-panel__inner"><div class="collapse-panel__pad">
           <p class="text-sm text-fg2 mb-4" id="stage-verify-note">Nothing has been provisioned.</p>
           <div class="mb-4 hidden" id="checklist-verify">
             <div class="check pending" id="chk-project"><span class="check-mark">○</span><span class="check-text text-sm">Project created</span></div>
@@ -268,20 +304,39 @@
             <div class="check pending" id="chk-teardown"><span class="check-mark">○</span><span class="check-text text-sm">Torn down</span></div>
           </div>
           <div id="attempt-list" class="flex flex-col gap-3"></div>
+          </div></div></div>
         </section>
       </div>
     </div>
 
-    <!-- The log is how the run explains itself, so it is on screen for the whole
-         run rather than appearing with the results. -->
-    <section class="card overflow-hidden flex flex-col h-[420px]">
-      <div class="flex items-center justify-between px-4 py-2.5 border-b border-edge">
-        <div class="flex items-center gap-2 text-[11px] uppercase tracking-wider text-fg3">
-          <span class="material-symbols-outlined text-[16px]">terminal</span> Event log
+    <!-- Pathfinder replay: every recorded transition with its offset. The
+         timeline is the run's story; the raw log below it is the transcript. -->
+    <section class="card" id="timeline-card">
+      <button type="button" class="collapse-toggle" aria-expanded="false" aria-controls="panel-timeline">
+        <div class="step-icon"><span class="material-symbols-outlined text-[20px]">timeline</span></div>
+        <div>
+          <div class="step-num mb-0.5">PATHFINDER REPLAY</div>
+          <h2 class="font-semibold">Timeline</h2>
         </div>
-        <span class="pill pill-running" id="log-live"><span class="dot bg-accent pulse"></span> live</span>
-      </div>
-      <div class="code-surface flex-grow overflow-y-auto scroll-thin p-4 font-mono text-[12px] leading-relaxed flex flex-col gap-0.5 border-0" id="terminal"></div>
+        <span class="collapse-toggle__meta"><span class="font-mono text-xs text-fg3" id="timeline-count"></span><span class="chev" aria-hidden="true"></span></span>
+      </button>
+      <div id="panel-timeline" class="collapse-panel"><div class="collapse-panel__inner"><div class="collapse-panel__pad">
+        <div class="flex flex-col" id="timeline"></div>
+      </div></div></div>
+    </section>
+
+    <section class="card" id="log-card">
+      <button type="button" class="collapse-toggle" aria-expanded="false" aria-controls="panel-log">
+        <div class="step-icon"><span class="material-symbols-outlined text-[20px]">terminal</span></div>
+        <div>
+          <div class="step-num mb-0.5">TRANSCRIPT</div>
+          <h2 class="font-semibold">Event log</h2>
+        </div>
+        <span class="collapse-toggle__meta"><span class="pill pill-running" id="log-live"><span class="dot bg-accent pulse"></span> live</span><span class="chev" aria-hidden="true"></span></span>
+      </button>
+      <div id="panel-log" class="collapse-panel"><div class="collapse-panel__inner"><div class="collapse-panel__pad">
+        <div class="code-surface rounded-card overflow-y-auto scroll-thin p-4 font-mono text-[12px] leading-relaxed flex flex-col gap-0.5 max-h-[420px]" id="terminal"></div>
+      </div></div></div>
     </section>
 
     <!-- Result banner -->
@@ -441,6 +496,7 @@
 </footer>
 
 <script src="config.js"></script>
+<script src="collapse.js"></script>
 <script src="common.js"></script>
 <script src="run.js"></script>
 </body>

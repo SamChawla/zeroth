@@ -44,7 +44,12 @@ VERDICTS = ("deployable", "needs_changes", "unsupported")
 
 @dataclass
 class Finding:
-    level: str  # blocker | change | note
+    # blocker: no runtime / nothing to deploy - verdict is unsupported.
+    # fatal:   the build or boot CANNOT succeed as-is - deploying only spends
+    #          money reproducing a known answer, so the gate refuses outright.
+    # change:  advisory - a deploy plausibly succeeds; allowed with an ack.
+    # note:    informational.
+    level: str  # blocker | fatal | change | note
     title: str
     detail: str
     evidence: str = ""
@@ -57,10 +62,19 @@ class Compatibility:
     findings: list[Finding] = field(default_factory=list)
     fix_prompt: str = ""
 
+    @property
+    def deployable(self) -> str:
+        """yes | with_ack | no - what the deploy gate should allow."""
+        levels = {f.level for f in self.findings}
+        if self.verdict == "unsupported" or "fatal" in levels:
+            return "no"
+        return "with_ack" if "change" in levels else "yes"
+
     def to_dict(self) -> dict:
         return {
             "verdict": self.verdict,
             "headline": self.headline,
+            "deployable": self.deployable,
             "findings": [asdict(f) for f in self.findings],
             "fix_prompt": self.fix_prompt,
         }
@@ -75,7 +89,7 @@ def build_fix_prompt(report: "Compatibility", facts: dict) -> str:
     the instructions is the honest middle ground between "here is a problem,
     good luck" and opening a pull request nobody asked for.
     """
-    actionable = [f for f in report.findings if f.level in ("blocker", "change")]
+    actionable = [f for f in report.findings if f.level in ("blocker", "fatal", "change")]
     if not actionable:
         return ""
 
@@ -145,7 +159,7 @@ def assess(fp) -> Compatibility:
         return report
 
     _check_runtime_version(findings, facts, base)
-    _check_dependency_manifest(findings, base, present)
+    _check_dependency_manifest(findings, base, present, facts)
     _check_entrypoint(findings, facts, base)
     _check_port(findings, facts)
     _check_backing_services(findings, facts)
@@ -194,14 +208,21 @@ def _check_runtime_version(findings, facts, base) -> None:
         ))
 
 
-def _check_dependency_manifest(findings, base, present) -> None:
+def _check_dependency_manifest(findings, base, present, facts=None) -> None:
     expected = DEPENDENCY_MANIFESTS.get(base, ())
     if expected and not (present & set(expected)):
+        searched = ""
+        for f in (facts or {}).get("facts") or []:
+            if f.get("key") == "manifest_search":
+                searched = f" Looked in the repository root and subdirectories ({f.get('evidence', '')})."
+                break
         findings.append(Finding(
-            "change",
-            "No dependency manifest",
-            f"None of {', '.join(expected)} was found, so the build has nothing to "
-            "install. Add one, or the application must genuinely have no dependencies.",
+            "fatal",
+            "No dependency manifest found anywhere",
+            f"None of {', '.join(expected)} exists at the project root or in any "
+            f"searched subdirectory, so the build has nothing to install and cannot "
+            f"succeed.{searched} Add one at the application's root, or move the "
+            "application to the repository root.",
         ))
 
 
@@ -285,7 +306,7 @@ def _check_encoding(findings, facts) -> None:
     for f in facts.get("facts") or []:
         if f.get("key") == "requirements_encoding":
             findings.append(Finding(
-                "change",
+                "fatal",
                 "requirements.txt is not UTF-8",
                 "The file is UTF-16 - the usual cause is `pip freeze > requirements.txt` "
                 "in PowerShell. pip on Linux cannot parse it, so the build fails at "
@@ -316,6 +337,14 @@ def _check_containerisation(findings, present) -> None:
 def _verdict(findings, base, facts) -> Compatibility:
     if any(f.level == "blocker" for f in findings):
         return Compatibility("unsupported", "Not deployable without changes", findings)
+
+    fatals = [f for f in findings if f.level == "fatal"]
+    if fatals:
+        return Compatibility(
+            "needs_changes",
+            f"Not deployable yet — {len(fatals)} thing{'' if len(fatals) == 1 else 's'} must be fixed first",
+            findings,
+        )
 
     changes = [f for f in findings if f.level == "change"]
     stack = f"{base} {facts.get('runtime_version') or ''}".strip()

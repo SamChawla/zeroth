@@ -59,11 +59,11 @@ function initTheme() {
 
 /* ---------- starting a run (shared by the home hero and the run page) ---------- */
 
-async function startJob(url) {
+async function startJob(url, extra = {}) {
   const res = await fetch(`${API}/api/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repo_url: url }),
+    body: JSON.stringify({ repo_url: url, ...extra }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || "Could not start the run.");

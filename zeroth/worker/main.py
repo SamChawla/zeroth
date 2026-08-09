@@ -4,7 +4,7 @@ import signal
 import sys
 from datetime import datetime, timezone
 
-from zeroth import bus
+from zeroth import bus, events, llm
 from zeroth.config import settings
 from zeroth.db import SessionLocal, init_db
 from zeroth.models import Artifact, Job, Run
@@ -34,7 +34,7 @@ def _set_status(db, job: Job, status: str, detail: str = "") -> None:
     job.status = status
     job.stage_detail = detail
     db.commit()
-    bus.publish(job.id, "status", {"status": status, "detail": detail})
+    events.record(job.id, "status", {"status": status, "detail": detail})
 
 
 def process_analyze(job_id: str) -> None:
@@ -45,6 +45,7 @@ def process_analyze(job_id: str) -> None:
     """
     db = SessionLocal()
     repo_dir = None
+    llm.set_run_context(bus.get_llm(job_id))
     try:
         job = db.get(Job, job_id)
         if not job:
@@ -62,7 +63,7 @@ def process_analyze(job_id: str) -> None:
         fp = build_fingerprint(repo_dir, job.repo_name)
         job.fingerprint = fp.to_dict()
         db.commit()
-        bus.publish(job.id, "fingerprint", {"fingerprint": job.fingerprint})
+        events.record(job.id, "fingerprint", {"fingerprint": job.fingerprint})
 
         # Answer "can this be deployed at all?" before spending a model call on
         # how. Deterministic and free, so it costs nothing to always run it.
@@ -70,13 +71,13 @@ def process_analyze(job_id: str) -> None:
         report = assess(fp)
         job.compatibility = report.to_dict()
         db.commit()
-        bus.publish(job.id, "compatibility", {"compatibility": job.compatibility})
+        events.record(job.id, "compatibility", {"compatibility": job.compatibility})
 
         _set_status(db, job, "analyzing", "Deciding the architecture")
         manifest = analyze(fp)
         job.manifest = manifest
         db.commit()
-        bus.publish(job.id, "manifest", {"manifest": manifest})
+        events.record(job.id, "manifest", {"manifest": manifest})
 
         _set_status(db, job, "generating", "Writing Zerops configuration")
         # A repository that already deploys to Zerops is better evidence than
@@ -110,14 +111,14 @@ def process_analyze(job_id: str) -> None:
         zerops_yaml = render_zerops_yaml(manifest, job.repo_url, framework)
         _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
         _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
-        bus.publish(job.id, "config", {
+        events.record(job.id, "config", {
             "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
         })
 
         _write_report(db, job, manifest)
         job.finished_at = datetime.now(timezone.utc)
         _set_status(db, job, "ready", "Configuration ready — review it, then try it out.")
-        bus.publish(job.id, "ready", {
+        events.record(job.id, "ready", {
             "verifiable": settings.pathfinder_provider != "off",
             "has_own_config": bool(own),
             "has_official_recipe": bool(_artifact(db, job, "official_zerops_yaml")),
@@ -126,6 +127,7 @@ def process_analyze(job_id: str) -> None:
     except (RepoRejected, Exception) as exc:  # noqa: BLE001
         _fail(db, job_id, exc)
     finally:
+        llm.clear_run_context()
         if repo_dir:
             ingest.cleanup(repo_dir)
         db.close()
@@ -144,6 +146,7 @@ def process_verify(job_id: str, target: str) -> None:
     repo_dir = None
     provider = None
     slot = False
+    llm.set_run_context(bus.get_llm(job_id))
     try:
         job = db.get(Job, job_id)
         if not job or not job.manifest:
@@ -152,13 +155,13 @@ def process_verify(job_id: str, target: str) -> None:
         token = bus.take_token(job_id) if target == "account" else ""
         if target == "account" and not token:
             _set_status(db, job, "ready", "That verification request expired — start it again.")
-            bus.publish(job.id, "verify_rejected", {"reason": "token_expired"})
+            events.record(job.id, "verify_rejected", {"reason": "token_expired"})
             return
 
         slot = bus.acquire_run_slot()
         if not slot:
             _set_status(db, job, "ready", "Verification queue is full — try again shortly.")
-            bus.publish(job.id, "verify_rejected", {"reason": "at_capacity"})
+            events.record(job.id, "verify_rejected", {"reason": "at_capacity"})
             return
 
         job.verify_target = target
@@ -191,7 +194,7 @@ def process_verify(job_id: str, target: str) -> None:
 
         result = pathfinder.run(
             job.id, job.repo_url, repo_dir, job.manifest,
-            lambda ev, payload: bus.publish(job.id, ev, payload),
+            lambda ev, payload: events.record(job.id, ev, payload),
             provider=provider,
             keep_project=(target == "account"),
             zerops_yaml_override=override,
@@ -228,7 +231,7 @@ def process_verify(job_id: str, target: str) -> None:
                 zerops_yaml = render_zerops_yaml(manifest, job.repo_url, framework)
                 _save(db, job, "import_yaml", "zerops-project-import.yaml", import_yaml)
                 _save(db, job, "zerops_yaml", "zerops.yaml", zerops_yaml)
-                bus.publish(job.id, "config", {
+                events.record(job.id, "config", {
                     "import_yaml": import_yaml, "zerops_yaml": zerops_yaml,
                 })
             except Exception:  # noqa: BLE001
@@ -238,17 +241,19 @@ def process_verify(job_id: str, target: str) -> None:
         _write_report(db, job, manifest, result.verified, result.attempts, simulated)
         job.finished_at = datetime.now(timezone.utc)
         _set_status(db, job, "done", _headline(result.verified, result.attempts, simulated)[0])
-        bus.publish(job.id, "complete", {
+        events.record(job.id, "complete", {
             "verified": result.verified,
             "live_url": job.live_url,
             "kept_project_id": job.kept_project_id,
             "provider": provider.name,
             "simulated": simulated,
         })
+        bus.drop_llm(job.id)
 
     except (RepoRejected, Exception) as exc:  # noqa: BLE001
         _fail(db, job_id, exc)
     finally:
+        llm.clear_run_context()
         if slot:
             bus.release_run_slot()
         if repo_dir:
@@ -341,7 +346,8 @@ def _fail(db, job_id: str, exc: Exception) -> None:
     job.error = str(exc)[:1000]
     job.finished_at = datetime.now(timezone.utc)
     _set_status(db, job, "failed", str(exc)[:300])
-    bus.publish(job.id, "complete", {"verified": False})
+    events.record(job.id, "complete", {"verified": False})
+    bus.drop_llm(job_id)
 
 
 def _save(db, job: Job, kind: str, filename: str, content: str) -> None:

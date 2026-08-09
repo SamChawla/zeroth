@@ -6,6 +6,14 @@ from pydantic import BaseModel, Field
 
 class JobCreate(BaseModel):
     repo_url: str = Field(min_length=8, max_length=500)
+    # BYOK: an OpenAI-compatible key used for THIS run only. Stashed in Valkey
+    # under a TTL, read by the worker, deleted when the run settles - never
+    # written to Postgres, artifacts or logs. BYOK runs skip the house token
+    # budget: the key runs until its owner's provider says stop.
+    llm_provider: Literal["openai", "groq", "openrouter", "custom"] | None = None
+    llm_api_key: str | None = Field(default=None, max_length=500)
+    llm_model: str | None = Field(default=None, max_length=200)
+    llm_base_url: str | None = Field(default=None, max_length=300)
 
 
 class VerifyRequest(BaseModel):
@@ -53,6 +61,15 @@ class RunOut(BaseModel):
         from_attributes = True
 
 
+class EventOut(BaseModel):
+    event: str
+    payload: dict | None
+    at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class JobOut(BaseModel):
     id: str
     repo_url: str
@@ -68,10 +85,12 @@ class JobOut(BaseModel):
     verify_target: str = ""
     provider: str = ""
     config_source: str = "generated"
+    llm_provider: str = ""
     verified: bool = False
     live_url: str = ""
     kept_project_id: str = ""
     runs: list[RunOut] = []
+    events: list[EventOut] = []
     artifacts: list[ArtifactOut] = []
 
     class Config:

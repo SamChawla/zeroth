@@ -1,0 +1,259 @@
+/* Status indicators + expand/collapse.
+ *
+ * State tokens derive from the design tokens in style.css - success/warning/
+ * danger/accent stay the single source of colour truth; this file only adds
+ * the tint (~14% alpha) and ring (~32% alpha) each state needs. Values are
+ * declared on :root (dark is this app's base theme) and re-tuned for light,
+ * where the same alphas read too weak on white.
+ */
+
+/* ---------- state tokens ---------- */
+:root {
+  --st-pass: rgb(var(--success));
+  --st-pass-tint: rgb(var(--success) / 0.14);
+  --st-pass-ring: rgb(var(--success) / 0.32);
+
+  --st-fail: rgb(var(--danger));
+  --st-fail-tint: rgb(var(--danger) / 0.14);
+  --st-fail-ring: rgb(var(--danger) / 0.32);
+
+  --st-progress: rgb(var(--accent));
+  --st-progress-tint: rgb(var(--accent) / 0.14);
+  --st-progress-ring: rgb(var(--accent) / 0.32);
+
+  --st-warn: rgb(var(--warning));
+  --st-warn-tint: rgb(var(--warning) / 0.14);
+  --st-warn-ring: rgb(var(--warning) / 0.32);
+
+  --st-pending: rgb(var(--fg3));
+  --st-pending-tint: rgb(var(--fg3) / 0.12);
+  --st-pending-ring: rgb(var(--fg3) / 0.28);
+}
+
+[data-theme="light"] {
+  --st-pass-tint: rgb(var(--success) / 0.16);
+  --st-pass-ring: rgb(var(--success) / 0.42);
+  --st-fail-tint: rgb(var(--danger) / 0.16);
+  --st-fail-ring: rgb(var(--danger) / 0.42);
+  --st-progress-tint: rgb(var(--accent) / 0.16);
+  --st-progress-ring: rgb(var(--accent) / 0.42);
+  --st-warn-tint: rgb(var(--warning) / 0.18);
+  --st-warn-ring: rgb(var(--warning) / 0.46);
+  --st-pending-tint: rgb(var(--fg3) / 0.14);
+  --st-pending-ring: rgb(var(--fg3) / 0.36);
+}
+
+/* ---------- .status-icon : circular chip ---------- */
+.status-icon {
+  --si-size: 28px;
+  --si-color: var(--st-pending);
+  --si-tint: var(--st-pending-tint);
+  --si-ring: var(--st-pending-ring);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--si-size);
+  height: var(--si-size);
+  border-radius: 999px;
+  background: var(--si-tint);
+  border: 1px solid var(--si-ring);
+  color: var(--si-color);
+  flex: none;
+  position: relative;
+}
+.status-icon--sm { --si-size: 20px; }
+.status-icon--lg { --si-size: 40px; }
+.status-icon--xl { --si-size: 56px; }
+
+.status-icon--pass     { --si-color: var(--st-pass);     --si-tint: var(--st-pass-tint);     --si-ring: var(--st-pass-ring); }
+.status-icon--fail     { --si-color: var(--st-fail);     --si-tint: var(--st-fail-tint);     --si-ring: var(--st-fail-ring); }
+.status-icon--progress { --si-color: var(--st-progress); --si-tint: var(--st-progress-tint); --si-ring: var(--st-progress-ring); }
+.status-icon--warn     { --si-color: var(--st-warn);     --si-tint: var(--st-warn-tint);     --si-ring: var(--st-warn-ring); }
+.status-icon--pending  { --si-color: var(--st-pending);  --si-tint: var(--st-pending-tint);  --si-ring: var(--st-pending-ring); }
+
+.status-icon--solid { background: var(--si-color); border-color: var(--si-color); color: #fff; }
+
+.status-icon--progress { animation: st-pulse 1.6s ease-in-out infinite; }
+.status-icon--progress > * { animation: st-spin 0.9s linear infinite; }
+
+/* --css variant: glyphs drawn with borders, zero icon-font dependency. */
+.status-icon--css::before, .status-icon--css::after { content: ""; position: absolute; }
+.status-icon--css.status-icon--pass::before {
+  width: calc(var(--si-size) * 0.42);
+  height: calc(var(--si-size) * 0.22);
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-18%) rotate(-45deg);
+}
+.status-icon--css.status-icon--fail::before,
+.status-icon--css.status-icon--fail::after {
+  width: calc(var(--si-size) * 0.5);
+  height: 2px;
+  background: currentColor;
+}
+.status-icon--css.status-icon--fail::before { transform: rotate(45deg); }
+.status-icon--css.status-icon--fail::after  { transform: rotate(-45deg); }
+.status-icon--css.status-icon--progress::before {
+  width: calc(var(--si-size) * 0.5);
+  height: calc(var(--si-size) * 0.5);
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-right-color: transparent;
+  animation: st-spin 0.9s linear infinite;
+}
+.status-icon--css.status-icon--pending::before,
+.status-icon--css.status-icon--warn::before {
+  width: calc(var(--si-size) * 0.4);
+  height: 2px;
+  background: currentColor;
+}
+
+/* ---------- .status-pill : icon + label ---------- */
+.status-pill {
+  --sp-color: var(--st-pending);
+  --sp-tint: var(--st-pending-tint);
+  --sp-ring: var(--st-pending-ring);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--sp-tint);
+  border: 1px solid var(--sp-ring);
+  color: var(--sp-color);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.status-pill--pass     { --sp-color: var(--st-pass);     --sp-tint: var(--st-pass-tint);     --sp-ring: var(--st-pass-ring); }
+.status-pill--fail     { --sp-color: var(--st-fail);     --sp-tint: var(--st-fail-tint);     --sp-ring: var(--st-fail-ring); }
+.status-pill--progress { --sp-color: var(--st-progress); --sp-tint: var(--st-progress-tint); --sp-ring: var(--st-progress-ring); }
+.status-pill--warn     { --sp-color: var(--st-warn);     --sp-tint: var(--st-warn-tint);     --sp-ring: var(--st-warn-ring); }
+.status-pill--pending  { --sp-color: var(--st-pending);  --sp-tint: var(--st-pending-tint);  --sp-ring: var(--st-pending-ring); }
+
+.status-pill--dot::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--sp-color);
+}
+.status-pill--dot.status-pill--progress::before { animation: st-blink 1.4s ease-in-out infinite; }
+
+/* ---------- table helpers ---------- */
+.status-cell { text-align: center; white-space: nowrap; }
+.status-sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+tr.row-pass > td { background: var(--st-pass-tint); }
+tr.row-fail > td { background: var(--st-fail-tint); }
+
+/* ---------- expand / collapse ---------- */
+.collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: rgb(var(--fg));
+  cursor: pointer;
+  padding: 1rem 1.25rem;
+  border-radius: inherit;
+  font: inherit;
+}
+.collapse-toggle__title { font-weight: 600; flex: none; }
+.collapse-toggle__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  color: rgb(var(--fg2));
+  font-size: 0.82rem;
+  min-width: 0;
+}
+
+/* Pure-CSS chevron: right+bottom borders rotated 45deg = points down. */
+.chev {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid rgb(var(--fg3));
+  border-bottom: 2px solid rgb(var(--fg3));
+  transform: rotate(45deg);
+  transition: transform 0.25s ease;
+  flex: none;
+  margin-left: 0.25rem;
+}
+/* aria-expanded IS the state - no parallel .active class to fall out of sync. */
+.collapse-toggle[aria-expanded="true"] .chev,
+details.collapse[open] .chev {
+  transform: rotate(-135deg);
+  border-color: rgb(var(--accent));
+}
+.collapse-toggle[aria-expanded="true"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Panel animates to auto height via the 0fr -> 1fr grid trick; no JS measuring. */
+.collapse-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+.collapse-panel.is-open { grid-template-rows: 1fr; }
+.collapse-panel__inner { overflow: hidden; min-height: 0; }
+.collapse-panel__pad { padding: 0 1.25rem 1.25rem; }
+
+/* Native <details> variant works with zero JS. */
+details.collapse > summary { list-style: none; cursor: pointer; }
+details.collapse > summary::-webkit-details-marker { display: none; }
+
+.chev-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--edge));
+  background: rgb(var(--surface2));
+  cursor: pointer;
+  padding: 0;
+}
+.chev-btn .chev { margin: 0 0 2px; }
+
+.collapse-toggle:focus-visible, .chev-btn:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+}
+
+/* ---------- keyframes ---------- */
+@keyframes st-spin { to { transform: rotate(360deg); } }
+@keyframes st-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes st-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--si-tint); }
+  50% { box-shadow: 0 0 0 5px var(--si-tint); }
+}
+
+/* ---------- motion + contrast safety ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .status-icon--progress, .status-icon--progress > *,
+  .status-icon--css.status-icon--progress::before,
+  .status-pill--dot.status-pill--progress::before,
+  .chev, .collapse-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (forced-colors: active) {
+  .status-icon, .status-pill, .chev, .chev-btn { border-color: currentColor; }
+}

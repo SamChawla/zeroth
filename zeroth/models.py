@@ -58,6 +58,9 @@ class Job(Base):
     # "repository" when the repo shipped its own zerops.yaml and we verified
     # that, "generated" when we verified ours.
     config_source: Mapped[str] = mapped_column(String(20), default="generated")
+    # Non-secret label only ("groq", "openai", ...). The key itself lives in
+    # Valkey under a TTL and never touches this table.
+    llm_provider: Mapped[str] = mapped_column(String(30), default="")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     live_url: Mapped[str] = mapped_column(String(500), default="")
     # Only set for target="account": that project is deliberately NOT torn down,
@@ -70,6 +73,21 @@ class Job(Base):
     artifacts: Mapped[list["Artifact"]] = relationship(
         back_populates="job", cascade="all, delete-orphan"
     )
+    events: Mapped[list["RunEvent"]] = relationship(
+        cascade="all, delete-orphan", order_by="RunEvent.at"
+    )
+
+
+class RunEvent(Base):
+    """One timeline entry. The replay is these rows in order."""
+
+    __tablename__ = "run_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    event: Mapped[str] = mapped_column(String(50))
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class Run(Base):

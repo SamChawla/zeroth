@@ -103,7 +103,88 @@ function abandonChecks(ids) {
   });
 }
 
+/* ---------- panels ----------
+   Everything defaults closed; a live run opens the panel that is actually
+   doing something, because watching progress you cannot see is not progress. */
+
+function openPanel(panelId, open = true) {
+  const toggle = document.querySelector(`[aria-controls="${panelId}"]`);
+  if (toggle && window.ZerothCollapse) ZerothCollapse.set(toggle, open);
+}
+
+/* ---------- timeline (Pathfinder replay) ---------- */
+
+let runStartMs = null;
+let timelineCount = 0;
+
+const EVENT_GLYPHS = {
+  attempt_failed: "fail", complete_fail: "fail",
+  attempt_passed: "pass", kept: "pass", torn_down: "pass", ready: "pass",
+  repair_proposed: "warn", verify_rejected: "warn",
+};
+
+function timelineOffset(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function timelineLabel(event, payload) {
+  const p = payload || {};
+  const map = {
+    status: p.detail || p.status,
+    fingerprint: "Repository fingerprinted",
+    compatibility: (p.compatibility || {}).headline || "Deployability assessed",
+    manifest: "Architecture decided",
+    config: "Configuration generated",
+    ready: "Ready — nothing provisioned",
+    attempt_started: `Attempt ${p.attempt} started (${p.provider})`,
+    stage: `${p.stage}…`,
+    attempt_failed: `Attempt ${p.attempt} failed — ${p.failure_class}`,
+    repair_proposed: `Repair proposed — ${p.patch_summary || p.diagnosis || ""}`,
+    attempt_passed: `Attempt ${p.attempt} passed`,
+    torn_down: "Ephemeral project destroyed",
+    kept: `Project kept in your account (${p.project_id})`,
+    complete: p.verified ? "DEPLOYMENT VERIFIED" : "Run finished — not verified",
+    verify_rejected: "Verification rejected",
+    queued_for_capacity: "Queued — verification at capacity",
+  };
+  return map[event] || event;
+}
+
+function addTimelineRow(event, payload, atMs) {
+  const el = $("timeline");
+  if (!el) return;
+  if (runStartMs === null) runStartMs = atMs;
+  let state = EVENT_GLYPHS[event] || "pass";
+  if (event === "complete") state = (payload || {}).verified ? "pass" : "warn";
+  if (event === "status" && (payload || {}).status === "failed") state = "fail";
+  const glyph = { pass: "pass", fail: "fail", warn: "warn" }[state];
+  el.insertAdjacentHTML("beforeend", `
+    <div class="flex items-center gap-3 py-1.5 border-b border-edge/60 last:border-0">
+      <span class="font-mono text-[11px] text-fg3 tabular-nums shrink-0">${timelineOffset(atMs - runStartMs)}</span>
+      <span class="status-icon status-icon--sm status-icon--css status-icon--${glyph}" aria-hidden="true"></span>
+      <span class="status-sr">${glyph}</span>
+      <span class="text-sm ${state === "fail" ? "text-danger" : state === "warn" ? "text-warning" : ""} min-w-0 truncate">${escape(timelineLabel(event, payload))}</span>
+    </div>`);
+  timelineCount += 1;
+  const count = $("timeline-count");
+  if (count) count.textContent = `${timelineCount} events`;
+  el.scrollTop = el.scrollHeight;
+}
+
 /* ---------- starting a run ---------- */
+
+function byokBody() {
+  const provider = $("byok-provider") && $("byok-provider").value;
+  const key = $("byok-key") && $("byok-key").value.trim();
+  if (!provider || !key) return {};
+  return {
+    llm_provider: provider,
+    llm_api_key: key,
+    llm_model: ($("byok-model").value || "").trim() || null,
+    llm_base_url: ($("byok-baseurl").value || "").trim() || null,
+  };
+}
 
 async function start(url) {
   hide("err");
@@ -111,7 +192,9 @@ async function start(url) {
   resetRun();
 
   try {
-    const id = await startJob(url);
+    const id = await startJob(url, byokBody());
+    // The key has been handed over for this run; do not leave it in the DOM.
+    if ($("byok-key")) $("byok-key").value = "";
     currentJob = id;
     history.replaceState(null, "", `run.html?job=${encodeURIComponent(id)}`);
     listen(id);
@@ -141,6 +224,10 @@ function resetRun() {
   setStage("reason", "pending", "Pending");
   setStage("verify", "pending", "Pending");
   runProvider = "";
+  $("timeline").innerHTML = "";
+  runStartMs = null;
+  timelineCount = 0;
+  const tc = $("timeline-count"); if (tc) tc.textContent = "";
   $("run-provider").textContent = "—";
   $("live-dot").className = "dot bg-accent pulse";
   show("run");
@@ -187,6 +274,7 @@ function listen(jobId) {
 }
 
 function handle(msg, jobId) {
+  addTimelineRow(msg.event, msg, Date.now());
   switch (msg.event) {
     case "status":
       if (!elapsedTimer && !["done", "failed", "ready"].includes(msg.status)) startClock();
@@ -194,9 +282,15 @@ function handle(msg, jobId) {
       if (["validating", "ingesting"].includes(msg.status)) {
         setStage("fingerprint", "active", "Running");
         setCheck("chk-fetch", "active");
+        openPanel("panel-analyze");
       }
       if (["analyzing", "generating", "checking"].includes(msg.status)) setStage("reason", "active", "Generating");
-      if (msg.status === "verifying") setStage("verify", "active", "Verifying");
+      if (msg.status === "verifying") {
+        setStage("verify", "active", "Verifying");
+        openPanel("panel-deploy");
+        openPanel("panel-analyze", false);
+        openPanel("panel-arch", false);
+      }
       if (msg.status === "checking") setCheck("chk-deployable", "active");
       if (msg.status === "generating") setCheck("chk-config", "active");
       if (msg.status === "failed") {
@@ -224,6 +318,7 @@ function handle(msg, jobId) {
     case "manifest":
       renderServices(msg.manifest);
       setStage("reason", "active", "Generating");
+      openPanel("panel-arch");
       break;
     case "config":
       $("import-yaml").textContent = msg.import_yaml;
@@ -459,12 +554,15 @@ function renderResult(verified, liveUrl, keptProjectId, simulated = false) {
   banner.style.borderLeft = `3px solid rgb(var(${proven ? "--success" : "--warning"}))`;
 
   const attempts = document.querySelectorAll("#attempt-list > div").length || 1;
+  const allChecks = [...ANALYZE_CHECKS, ...VERIFY_CHECKS].map((id) => $(id)).filter(Boolean);
+  const passed = allChecks.filter((el) => el.classList.contains("done")).length;
+  const attempted = allChecks.filter((el) => !el.classList.contains("pending")).length;
   const environment = simulated ? "Simulated" : keptProjectId ? "Your account" : "Ephemeral";
   const meta = [
     ["Status", simulated ? "Not deployed" : verified ? "Healthy" : "Not verified"],
     ["Attempts", String(attempts)],
     ["Environment", environment],
-    ["Verification", proven ? "Passed" : simulated ? "Not run" : "Failed"],
+    ["Checks", `${passed} / ${attempted || allChecks.length} passed`],
   ];
 
   const kept = simulated
@@ -544,38 +642,39 @@ async function rerunCurrent() {
 /* ---------- try it out ---------- */
 
 function showTryout() {
-  // The verdict decides what is even on offer here. Presenting the same
-  // confident deploy button after the checker said it will fail is what made
-  // the deployability stage decorative.
-  const verdict = compatReport && compatReport.verdict;
+  // The verdict decides what is on offer. deployable comes from the check:
+  // "no" (fatal findings - running would only prove them), "with_ack"
+  // (advisory findings), or "yes".
+  const deployable = (compatReport && compatReport.deployable)
+    || (compatReport && compatReport.verdict === "unsupported" ? "no" : "yes");
   const btn = $("tryout-go");
   const note = $("tryout-verdict");
   btn.disabled = false;
   btn.classList.remove("btn-secondary");
   btn.classList.add("btn-primary");
 
-  if (verdict === "unsupported") {
+  if (deployable === "no") {
     btn.disabled = true;
+    btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">block</span> Not deployable yet';
     note.innerHTML = '<span class="material-symbols-outlined text-[17px] text-danger shrink-0">block</span>' +
-      "<span>There is no Zerops runtime for this stack, so there is nothing to deploy it onto.</span>";
+      "<span>The findings above make this deployment certain to fail, so running it is disabled. " +
+      "Use the fix prompt, apply the changes, and analyze again.</span>";
     show("tryout-verdict");
-  } else if (verdict === "needs_changes") {
+  } else if (deployable === "with_ack") {
     const changes = (compatReport.findings || []).filter((f) => f.level === "change").length;
     btn.classList.remove("btn-primary");
     btn.classList.add("btn-secondary");
     btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">play_arrow</span> Deploy anyway';
     note.innerHTML = '<span class="material-symbols-outlined text-[17px] text-warning shrink-0">build</span>' +
-      `<span>The check found ${changes} change${changes === 1 ? "" : "s"} above that will most likely make this fail. ` +
-      "Fixing them first is cheaper than watching it break.</span>";
+      `<span>The check found ${changes} advisory change${changes === 1 ? "" : "s"} above. ` +
+      "A deploy may still succeed — the inferred values are shown so you can judge them.</span>";
     show("tryout-verdict");
   } else {
     btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">play_arrow</span> Try it out';
     hide("tryout-verdict");
-  hide("config-source-row");
-  hasOwnConfig = false;
-  hasOfficial = false;
   }
-  // Only offer candidates that actually exist for this repository.
+
+  // Only offer configuration candidates that exist for this repository.
   const anyChoice = hasOwnConfig || hasOfficial;
   $("choice-repo").hidden = !hasOwnConfig;
   $("choice-official").hidden = !hasOfficial;
@@ -625,7 +724,7 @@ async function requestVerify() {
       body: JSON.stringify({
         target,
         token: target === "account" ? token : null,
-        acknowledge: (compatReport && compatReport.verdict) === "needs_changes",
+        acknowledge: (compatReport && compatReport.deployable) === "with_ack",
         config_source: selectedConfigSource(),
       }),
     });
@@ -656,6 +755,13 @@ function initTryout() {
     });
   });
   $("tryout-go").addEventListener("click", requestVerify);
+
+  const byokProvider = $("byok-provider");
+  if (byokProvider) {
+    byokProvider.addEventListener("change", () => {
+      $("byok-baseurl-row").hidden = byokProvider.value !== "custom";
+    });
+  }
 
   $("fixprompt-toggle").addEventListener("click", (e) => {
     const pre = $("fixprompt-text");
@@ -726,6 +832,11 @@ function hydrate(job) {
     startClock();
     $("live-dot").className = "dot bg-accent pulse";
   }
+
+  (job.events || []).forEach((e) => {
+    addTimelineRow(e.event, e.payload || {}, new Date(e.at).getTime());
+  });
+  if ((job.events || []).length) openPanel("panel-timeline");
 
   if (job.compatibility) renderCompatibility(job.compatibility);
   if (job.fingerprint) {
